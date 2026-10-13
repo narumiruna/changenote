@@ -136,3 +136,8 @@ dmypy.json
 
 # Codex CLI
 .codex
+
+
+# Added by cargo
+
+/target
