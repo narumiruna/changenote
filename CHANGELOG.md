@@ -1,3 +1,7 @@
+## 0.1.2
+
+- Fix Linux Python release builds by creating the distribution directory with runner ownership before the manylinux container writes artifacts.
+
 ## 0.1.1
 
 - Publish the Rust CLI to PyPI as tested Linux, macOS, and Windows wheels and a source distribution through the Release workflow using Trusted Publishing.
