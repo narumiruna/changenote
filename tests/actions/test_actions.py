@@ -144,7 +144,8 @@ class Actions(unittest.TestCase):
         self.assertEqual(outputs["pr-operation"], "updated")
         self.assertEqual(first, self.git("ls-remote", "origin", "refs/heads/" + BRANCH))
         self.assertFalse((self.repo / "injected").exists())
-        self.assertIn("1.0.0 → 1.0.1 (patch)", self.state()["pulls"][0]["body"])
+        self.assertIn("## pkg@1.0.1\n\n### Patch Changes", self.state()["pulls"][0]["body"])
+        self.assertIn("- Multiline\n  $(touch injected)", self.state()["pulls"][0]["body"])
         self.assertIn("$(touch injected)", self.state()["pulls"][0]["body"])
         self.note("More fixes", "second")
         self.action()
@@ -155,6 +156,39 @@ class Actions(unittest.TestCase):
         _, outputs = self.action()
         self.assertEqual(outputs["pr-operation"], "closed")
         self.assertTrue(self.git("ls-remote", "origin", "refs/heads/" + BRANCH))
+
+    def test_pr_body_groups_each_note_by_bump(self):
+        (self.repo / "other").mkdir()
+        (self.repo / "other/VERSION").write_text("2.0.0\n")
+        (self.repo / ".changenote/config.json").write_text(json.dumps({
+            "packages": {
+                "pkg": {"path": ".", "version_file": "VERSION"},
+                "other": {"path": "other", "version_file": "VERSION"},
+            }
+        }))
+        (self.repo / ".changenote/a.md").write_text(
+            "---\npkg: patch\nother: minor\n---\nShared change\n\nSecond paragraph"
+        )
+        self.cli("add", "b", "-p", "pkg", "--bump", "major", "-m", "Breaking change")
+        self.cli("add", "c", "-p", "pkg", "--bump", "minor", "-m", "New feature")
+        self.cli("add", "d", "-p", "pkg", "--bump", "patch", "-m", "Another fix")
+        self.commit("notes")
+        self.git("push", "origin", "main")
+        self.action()
+        body = self.state()["pulls"][0]["body"]
+        self.assertTrue(body.startswith("<!-- changenote-release-pr -->"))
+        self.assertIn("[changenote release](https://github.com/narumiruna/changenote)", body)
+        self.assertIn("New change notes on `main` update this PR.", body)
+        self.assertIn("registry publication requires a separate workflow", body)
+        self.assertIn(
+            "# Releases\n\n## other@2.1.0\n\n### Minor Changes\n\n"
+            "- Shared change\n  \n  Second paragraph\n\n"
+            "## pkg@2.0.0\n\n### Major Changes\n\n- Breaking change\n\n"
+            "### Minor Changes\n\n- New feature\n\n"
+            "### Patch Changes\n\n- Shared change\n  \n  Second paragraph\n- Another fix",
+            body,
+        )
+        self.assertEqual(body.count("### Major Changes"), 1)
 
     def test_pr_with_installation_token_without_permissions(self):
         self.set_state(omit_permissions=True)

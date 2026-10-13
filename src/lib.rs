@@ -46,6 +46,9 @@ pub struct Release {
     pub bump: Bump,
     pub tag: String,
     pub notes: Vec<String>,
+    /// Bump for each summary, in the same order as `notes`.
+    #[serde(skip)]
+    pub note_bumps: Vec<Bump>,
 }
 
 fn safe_name(name: &str) -> Result<()> {
@@ -251,6 +254,7 @@ fn plan(root: &Path, config: &Config, notes: &[(PathBuf, Note)]) -> Result<Vec<R
             version,
             bump,
             tag,
+            note_bumps: changes.iter().map(|(b, _)| *b).collect(),
             notes: changes.into_iter().map(|(_, s)| s).collect(),
         });
     }

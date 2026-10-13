@@ -33,7 +33,11 @@ enum Commands {
         message: String,
     },
     /// Print the pending release plan as JSON without changing files.
-    Status,
+    Status {
+        /// Include the bump for each note in the JSON output.
+        #[arg(long)]
+        include_note_bumps: bool,
+    },
     /// Apply the plan, update changelogs, and consume notes.
     Version,
     /// Create local annotated tags for the committed release plan.
@@ -53,10 +57,18 @@ fn run() -> Result<()> {
             "{}",
             changenote::add(&cli.root, &name, package, bump, &message)?.display()
         ),
-        Commands::Status => println!(
-            "{}",
-            serde_json::to_string_pretty(&changenote::status(&cli.root)?)?
-        ),
+        Commands::Status { include_note_bumps } => {
+            let releases = changenote::status(&cli.root)?;
+            if include_note_bumps {
+                let mut plan = serde_json::to_value(&releases)?;
+                for (entry, release) in plan.as_array_mut().unwrap().iter_mut().zip(&releases) {
+                    entry["note_bumps"] = serde_json::to_value(&release.note_bumps)?;
+                }
+                println!("{}", serde_json::to_string_pretty(&plan)?);
+            } else {
+                println!("{}", serde_json::to_string_pretty(&releases)?);
+            }
+        }
         Commands::Version => println!(
             "{}",
             serde_json::to_string_pretty(&changenote::version(&cli.root)?)?

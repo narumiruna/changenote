@@ -79,10 +79,38 @@ fn highest_bump_wins_once_and_status_does_not_write() {
     assert_eq!(plan[0].version, Version::new(1, 0, 0));
     assert_eq!(plan[0].notes.len(), 3);
     assert_eq!(
+        plan[0].note_bumps,
+        vec![Bump::Patch, Bump::Minor, Bump::Major]
+    );
+    assert_eq!(
         fs::read_to_string(dir.path().join("VERSION")).unwrap(),
         "0.0.0\n"
     );
     assert!(dir.path().join(".changenote/a.md").exists());
+}
+
+#[test]
+fn status_note_bumps_are_opt_in() {
+    let dir = project();
+    note(dir.path(), "a", Bump::Patch);
+    note(dir.path(), "b", Bump::Minor);
+    for include in [false, true] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_changenote"));
+        command.current_dir(dir.path()).arg("status");
+        if include {
+            command.arg("--include-note-bumps");
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success());
+        let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        if include {
+            assert_eq!(plan[0]["note_bumps"], serde_json::json!(["patch", "minor"]));
+        } else {
+            assert!(plan[0].get("note_bumps").is_none());
+        }
+    }
+    assert!(dir.path().join(".changenote/a.md").exists());
+    assert!(!dir.path().join(".changenote/releases.json").exists());
 }
 
 #[test]
@@ -103,6 +131,8 @@ fn consumes_notes_and_preserves_previous_changelog() {
     assert!(!dir.path().join(".changenote/hello-world.md").exists());
     assert!(dir.path().join(".changenote/README.md").exists());
     let saved = fs::read_to_string(dir.path().join(".changenote/releases.json")).unwrap();
+    let batch: serde_json::Value = serde_json::from_str(&saved).unwrap();
+    assert!(batch[0].get("note_bumps").is_none());
     assert!(version(dir.path()).unwrap().is_empty());
     assert_eq!(
         fs::read_to_string(dir.path().join(".changenote/releases.json")).unwrap(),

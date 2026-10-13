@@ -37,6 +37,7 @@ if [[ $(jq length "$temp/plan.json") == 0 ]]; then
   exit 0
 fi
 output has-notes true
+"$cli" status --include-note-bumps > "$temp/details.json"
 "$cli" version > "$temp/applied.json"
 jq -e --slurpfile expected "$temp/plan.json" '. == $expected[0]' "$temp/applied.json" >/dev/null || fail 'Version output differs from status.'
 stage_release "$temp/plan.json"
@@ -49,9 +50,21 @@ if [[ -z $previous || $(git rev-parse "$previous^{tree}") != "$tree" ]]; then
 fi
 listing=$(remote_git ls-remote --heads "$remote_url" "refs/heads/$branch")
 [[ $(awk '{print $1}' <<< "$listing") == "$expected_head" ]] || fail 'Release branch moved after generation.'
-jq -r --arg marker "$marker" \
-  '$marker + "\n\nMerge this PR to release these versions. New notes update this PR.\n\n" + (map("## " + .package + ": " + .old_version + " → " + .version + " (" + .bump + ")\n\n" + (.notes | join("\n\n"))) | join("\n\n"))' \
-  "$temp/plan.json" > "$temp/body.md"
+jq -r --arg marker "$marker" --arg base "$base" '
+  def changes:
+    . as $release |
+    ["major", "minor", "patch"] | map(
+      . as $bump |
+      [range(0; $release.notes | length) |
+        select($release.note_bumps[.] == $bump) |
+        "- " + ($release.notes[.] | split("\n") | join("\n  "))
+      ] |
+      select(length > 0) |
+      "### " + ($bump | ascii_upcase[0:1]) + $bump[1:] + " Changes\n\n" + join("\n")
+    ) | join("\n\n");
+  $marker + "\n\nThis PR was opened by the [changenote release](https://github.com/narumiruna/changenote) GitHub Action. Merge this PR when you are ready to release these versions. Use the publication Action to publish tags and GitHub Releases; registry publication requires a separate workflow. If you are not ready to release, leave this PR open. New change notes on `" + $base + "` update this PR.\n\n# Releases\n\n" +
+  (map("## " + .package + "@" + .version + "\n\n" + changes) | join("\n\n"))
+' "$temp/details.json" > "$temp/body.md"
 if [[ $(wc -c < "$temp/body.md") -gt 60000 ]]; then
   printf '%s\n\nRelease details exceed the PR body limit. See the changed version files and changelogs.\n' "$marker" > "$temp/body.md"
 fi
