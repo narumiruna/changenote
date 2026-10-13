@@ -93,7 +93,7 @@ Remote tags and GitHub Releases determine publication state. A tag at a differen
 ## Verification evidence
 
 - Branch: `narumi/feat/github-release-action`, based on `origin/main`. The initial untracked plan was preserved and updated; no unrelated source changes were present.
-- `tests/actions/test_actions.py`: 31 passing local Git/mock GitHub tests. Cases include PR updates, closed/merged PRs, no-op reruns, branch leases and no-op races, partial pushes, release failures, tag races, root/malformed/edited batches, shallow/stale checkouts, multiple packages, and shell metacharacters.
+- `tests/actions/test_actions.py`: 34 passing local Git/mock GitHub tests. Cases include PR updates, closed/merged PRs, no-op reruns, branch leases and no-op races, partial pushes, release failures, tag races, root/malformed/edited batches, shallow/stale checkouts, multiple packages, and shell metacharacters.
 - `tests/action_metadata/test_metadata.py`: 3 passing tests. They run the composite commands from a consumer repository with no Action source and verify metadata, README examples, workflow triggers, concurrency, permissions, and outputs.
 - Bash syntax checks for each script, ShellCheck with sources, actionlint v1.7.11, Python test-source lint checks, and `uvx pre-commit run --all-files` pass.
 - `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked` (12 integration tests), and `cargo build --locked --release` pass.
@@ -101,6 +101,8 @@ Remote tags and GitHub Releases determine publication state. A tag at a differen
 - `.changenote/github-release-action.md` requests `minor` for `changenote`. Status validation passes; the combined repository plan remains `major` because of an existing Python compatibility note.
 - Diff review checked explicit token use, trusted triggers, scoped staging, unchanged CLI contracts, worktree isolation, branch ownership, immutable tags, partial failure recovery, and pending-run lifecycle.
 - Initial PR CI run `38415703223` found an implicit remote-HEAD dependency in shallow fetches. Fetch now explicitly names the base ref, and all fixture remotes have an unborn default HEAD. It also exposed an existing Python path assertion failure on macOS/Windows (already present in main run `38409234152`). The assertion now compares resolved paths without changing wrapper behavior; local tests also pass with a symlinked temporary directory.
+- PR #7 was merged while its batch symlink review item was being fixed. The fix was moved to `narumi/fix/release-batch-symlink` from `origin/main` at merge commit `0f10b06`.
+- Review item `discussion_r4260299850` was reproduced: a batch symlink to `../VERSION` allowed an invalid Release PR. Shared worktree setup now rejects batch symlinks before CLI writes. Staging checks every output, including the seeded batch path. Three new tests cover existing and dangling links, publication reconstruction, and staging without index changes.
 - Hosted smoke tests remain blocked: the user prohibits package publication, version tags, and release workflow dispatch. No disposable repository or GitHub App token was supplied. Local tags exist only in temporary test repositories; no GitHub release or repository tag was created. The plan remains open and must not be deleted.
 
 ## Risks

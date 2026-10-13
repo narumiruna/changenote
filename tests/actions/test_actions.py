@@ -444,6 +444,86 @@ class Actions(unittest.TestCase):
         self.assertEqual(config_before, self.git("config", "--local", "--list"))
         self.assertTrue(self.git("ls-remote", str(self.remote), "refs/heads/" + BRANCH))
 
+    def log_cli_calls(self):
+        log = self.top / "cli-calls"
+        self.env["CLI_CALL_LOG"] = str(log)
+        wrapper = self.bin / "changenote"
+        wrapper.write_text(
+            f'#!/usr/bin/env bash\nprintf "%s\\n" "$1" >> "$CLI_CALL_LOG"\nexec "{CLI}" "$@"\n'
+        )
+        wrapper.chmod(0o755)
+        return log
+
+    def test_batch_symlink_blocks_pr_before_version(self):
+        self.note()
+        batch = self.repo / ".changenote/releases.json"
+        for target in ("../VERSION", "../missing-batch.json"):
+            with self.subTest(target=target):
+                if batch.is_symlink():
+                    batch.unlink()
+                batch.symlink_to(target)
+                self.commit("batch symlink")
+                self.git("push", "origin", "main")
+                log = self.log_cli_calls()
+                result, _ = self.action(ok=False)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    "cannot be symlinks: .changenote/releases.json", result.stderr
+                )
+                self.assertNotIn(
+                    "version", log.read_text().splitlines() if log.exists() else []
+                )
+                self.assertEqual((self.repo / "VERSION").read_text(), "1.0.0\n")
+                self.assertFalse((self.repo / "missing-batch.json").exists())
+                self.assertTrue(batch.is_symlink())
+                self.assertEqual(self.git("status", "--porcelain"), "")
+                self.assertFalse(
+                    self.git("ls-remote", "origin", "refs/heads/" + BRANCH)
+                )
+                self.assertEqual(self.state()["pulls"], [])
+
+    def test_stage_release_checks_seeded_batch_path(self):
+        self.note()
+        plan = self.top / "plan.json"
+        plan.write_text(self.cli("status"))
+        self.cli("version")
+        batch = self.repo / ".changenote/releases.json"
+        batch.unlink()
+        batch.symlink_to("../VERSION")
+        self.env["COMMON_SCRIPT"] = str(SOURCE / "scripts/action/common.sh")
+        self.env["PLAN_PATH"] = str(plan)
+        result = self.run_cmd(
+            ["bash", "-c", 'source "$COMMON_SCRIPT"; stage_release "$PLAN_PATH"'],
+            ok=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot be symlinks: .changenote/releases.json", result.stderr)
+        self.assertEqual(self.git("diff", "--cached", "--name-only"), "")
+
+    def test_batch_symlink_blocks_publication_before_reconstruction(self):
+        self.note()
+        target = self.repo / "prior.json"
+        target.write_text("prior batch\n")
+        batch = self.repo / ".changenote/releases.json"
+        batch.symlink_to("../prior.json")
+        self.commit("parent batch symlink")
+        # A regular batch at HEAD must not hide a symlink in its parent.
+        batch.unlink()
+        self.cli("version")
+        self.commit("release")
+        self.git("push", "origin", "main")
+        log = self.log_cli_calls()
+        result, _ = self.action("publish", ok=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot be symlinks: .changenote/releases.json", result.stderr)
+        self.assertNotIn(
+            "version", log.read_text().splitlines() if log.exists() else []
+        )
+        self.assertEqual(target.read_text(), "prior batch\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertFalse(self.git("ls-remote", "origin", "refs/tags/v1.0.1"))
+        self.assertEqual(self.state()["releases"], [])
+
     def test_action_rejects_symlink_output(self):
         self.git("mv", "VERSION", "real-version")
         (self.repo / "VERSION").symlink_to("real-version")

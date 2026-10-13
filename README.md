@@ -94,7 +94,7 @@ This repository provides two reusable composite Actions:
 - `narumiruna/changenote@<full-commit-sha>`: create or update a Release PR.
 - `narumiruna/changenote/publish@<full-commit-sha>`: publish annotated tags and GitHub Releases.
 
-Both require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `changenote` executable on `PATH`. Ubuntu GitHub-hosted runners include the non-CLI tools. Package version files and changelogs must not be symlinks. Run at the repository root; the Actions load their scripts from the Action checkout, not the consumer repository. They do not install the CLI, publish registries, or synchronize package manifests.
+Both require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `changenote` executable on `PATH`. Ubuntu GitHub-hosted runners include the non-CLI tools. Package version files, changelogs, and `.changenote/releases.json` must not be symlinks. Both Actions check the batch path before CLI writes. Run at the repository root; the Actions load their scripts from the Action checkout, not the consumer repository. They do not install the CLI, publish registries, or synchronize package manifests.
 
 ### Release PR workflow
 
