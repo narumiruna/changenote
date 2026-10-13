@@ -68,7 +68,7 @@ Each package directory must exist and contain its version file, for example `pac
 0.1.0
 ```
 
-For a mixed-language monorepo, use each package's manifest. Go can keep `VERSION`:
+Packages in any language can use a plain-text `VERSION` file, including Python, Rust, Node.js, and Go. Package manifests are optional version sources. You can mix manifests and `VERSION` files in the same repository:
 
 ```json
 {
