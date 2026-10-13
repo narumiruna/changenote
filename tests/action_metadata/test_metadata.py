@@ -129,6 +129,15 @@ class Metadata(unittest.TestCase):
         )
         self.assertEqual(sdist["if"], "matrix.target == 'x86_64-unknown-linux-gnu'")
         self.assertEqual(sdist["with"]["command"], "sdist")
+        prepare_dist = next(
+            step
+            for step in wheels["steps"]
+            if step.get("name") == "Create distribution directory"
+        )
+        self.assertEqual(prepare_dist["shell"], "bash")
+        self.assertEqual(prepare_dist["run"], "mkdir -p source/dist")
+        self.assertLess(wheels["steps"].index(prepare_dist), wheels["steps"].index(build))
+        self.assertLess(wheels["steps"].index(prepare_dist), wheels["steps"].index(sdist))
         pypi = jobs["pypi"]
         self.assertEqual(pypi["needs"], ["publish", "wheels"])
         self.assertIn("needs.wheels.result == 'success'", pypi["if"])
