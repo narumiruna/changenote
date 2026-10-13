@@ -2,13 +2,13 @@
 all: format lint test
 
 format:
-    cargo fmt --all --check
+    cargo fmt --check
 
 lint:
-    cargo clippy --locked --workspace --all-targets -- -D warnings
+    cargo clippy --locked --all-targets -- -D warnings
 
 test:
-    cargo test --locked --workspace
+    cargo test --locked
 
 build:
-    cargo build --locked --release -p changenote
+    cargo build --locked --release

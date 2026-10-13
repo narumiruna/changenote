@@ -27,8 +27,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test and build
         run: |
-          cargo test --locked --workspace
-          cargo build --locked --release -p changenote
+          cargo test --locked
+          cargo build --locked --release
       - name: Apply notes and commit version files
         shell: bash
         run: |
