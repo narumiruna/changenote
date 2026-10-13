@@ -1,3 +1,7 @@
+## 0.1.1
+
+- Publish the Rust CLI to PyPI as tested Linux, macOS, and Windows wheels and a source distribution through the Release workflow using Trusted Publishing.
+
 ## 0.1.0
 
 - Fix release Actions rejecting installation tokens when repository permission metadata is absent or reports push access as false. Let Git pushes and GitHub API writes check actual token access.
