@@ -1,12 +1,12 @@
 [
   {
     "package": "changenote",
-    "old_version": "0.1.0",
-    "version": "0.1.1",
+    "old_version": "0.1.1",
+    "version": "0.1.2",
     "bump": "patch",
-    "tag": "v0.1.1",
+    "tag": "v0.1.2",
     "notes": [
-      "Publish the Rust CLI to PyPI as tested Linux, macOS, and Windows wheels and a source distribution through the Release workflow using Trusted Publishing."
+      "Fix Linux Python release builds by creating the distribution directory with runner ownership before the manylinux container writes artifacts."
     ]
   }
 ]
