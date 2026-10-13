@@ -2,7 +2,7 @@
 
 A Rust CLI for language-independent change notes, SemVer versions, changelogs, and release tags. Inspired by [Changesets](https://github.com/changesets/changesets).
 
-Each package has an explicit directory and a plain-text version file. No language runtime or package manager is required after the CLI is built.
+Each package has an explicit directory and a version file: a package manifest or a plain-text file. No language runtime or package manager is required after the CLI is built.
 
 ## Install
 
@@ -47,7 +47,7 @@ git push origin refs/tags/v0.1.0
 
 `version` takes the highest requested bump for each package and applies it once. Multiple patch notes cause one patch bump, not multiple bumps. Major, minor, and patch follow stable SemVer rules, including versions below 1.0.0.
 
-The command updates `VERSION`, prepends entries to `CHANGELOG.md`, saves the latest release batch to `.changenote/releases.json`, and removes consumed notes. A run without pending notes does not change files or clear the saved batch.
+The command updates each configured version file, prepends entries to `CHANGELOG.md`, saves the latest release batch to `.changenote/releases.json`, and removes consumed notes. A run without pending notes does not change files or clear the saved batch.
 
 ## Monorepo
 
@@ -67,6 +67,30 @@ Each package directory must exist and contain its version file, for example `pac
 ```text
 0.1.0
 ```
+
+Packages in any language can use a plain-text `VERSION` file, including Python, Rust, Node.js, and Go. Package manifests are optional version sources. You can mix manifests and `VERSION` files in the same repository:
+
+```json
+{
+  "packages": {
+    "pkg-python": { "path": "packages/pkg-python", "version_file": "pyproject.toml" },
+    "pkg-rust": { "path": "packages/pkg-rust", "version_file": "Cargo.toml" },
+    "pkg-node": { "path": "packages/pkg-node", "version_file": "package.json" },
+    "pkg-go": { "path": "packages/pkg-go", "version_file": "VERSION" }
+  }
+}
+```
+
+`version_file` is relative to the package directory. Its filename selects the version field:
+
+| Filename | Version field |
+| --- | --- |
+| `pyproject.toml` | `project.version` |
+| `Cargo.toml` | `package.version` |
+| `package.json` | Top-level `version` |
+| Other filenames, including `VERSION` | Plain-text stable SemVer string |
+
+Manifest versions must be explicit strings. Dynamic Python versions, Poetry-only versions, and inherited Cargo workspace versions are not supported. TOML comments and unrelated fields are preserved. JSON fields and their order are preserved; output uses two-space indentation and a final newline. Lockfiles and dependency versions are not updated. `init` still creates a plain-text `VERSION`; configure existing manifests manually.
 
 One note can name multiple packages with different bumps:
 
@@ -94,7 +118,7 @@ This repository provides two reusable composite Actions:
 - `narumiruna/changenote@<full-commit-sha>`: create or update a Release PR.
 - `narumiruna/changenote/publish@<full-commit-sha>`: publish annotated tags and GitHub Releases.
 
-Both require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `changenote` executable on `PATH`. Ubuntu GitHub-hosted runners include the non-CLI tools. Package version files, changelogs, and `.changenote/releases.json` must not be symlinks. Both Actions check the batch path before CLI writes. Run at the repository root; the Actions load their scripts from the Action checkout, not the consumer repository. They do not install the CLI, publish registries, or synchronize package manifests.
+Both require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `changenote` executable on `PATH`. Ubuntu GitHub-hosted runners include the non-CLI tools. Package version files, changelogs, and `.changenote/releases.json` must not be symlinks. Both Actions check the batch path before CLI writes. Run at the repository root; the Actions load their scripts from the Action checkout, not the consumer repository. They do not install the CLI or publish registries. The CLI updates configured version files only; it does not synchronize other manifests or lockfiles.
 
 ### Release PR workflow
 
@@ -198,7 +222,7 @@ Before production use, verify repository permissions, branch rules, and App-toke
 
 ## Scope and safety
 
-- Version files contain only a stable SemVer string. They are the release version source; `Cargo.toml`, `package.json`, `pyproject.toml`, lockfiles, and internal dependencies are **not** updated. Use a package-specific build or publication step if those files require synchronization. The CLI's `--version` reports its Cargo build version, not a configured package version.
+- Configured version files are the release version source and must contain a stable SemVer version in the field listed above. Only configured files are updated; other manifests, lockfiles, and internal dependencies are **not** updated. Use a package-specific build or publication step if those files require synchronization. The CLI's `--version` reports its Cargo build version, not a configured package version.
 - Names use ASCII letters, digits, hyphens, and underscores. Paths are relative to the repository root and cannot contain parent components. Package output files cannot overlap or resolve outside the repository.
 - Unknown packages, invalid bumps, duplicate YAML keys, empty summaries, and prerelease versions are rejected. `add` never overwrites a note.
 - Only top-level `.changenote/*.md` files are read. Hidden files and `README.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` are ignored.

@@ -1,3 +1,5 @@
+mod version_file;
+
 use anyhow::{Context, Result, ensure};
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -8,6 +10,7 @@ use std::{
     path::{Component, Path, PathBuf},
     process::Command,
 };
+use version_file::{read_version, version_content};
 
 #[derive(
     Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum,
@@ -146,16 +149,6 @@ pub fn load_config(root: &Path) -> Result<Config> {
         read_version(&file)?;
     }
     Ok(config)
-}
-
-fn read_version(path: &Path) -> Result<Version> {
-    let version = Version::parse(fs::read_to_string(path)?.trim())
-        .with_context(|| format!("invalid version in {}", path.display()))?;
-    ensure!(
-        version.pre.is_empty() && version.build.is_empty(),
-        "only stable SemVer versions are supported"
-    );
-    Ok(version)
 }
 
 pub fn parse_note(content: &str) -> Result<Note> {
@@ -364,10 +357,9 @@ pub fn version(root: &Path) -> Result<Vec<Release>> {
                 .join("\n\n")
         );
         writes.push((path, format!("{entry}{old}")));
-        writes.push((
-            checked_path(root, &pkg.path.join(&pkg.version_file))?,
-            format!("{}\n", release.version),
-        ));
+        let version_path = checked_path(root, &pkg.path.join(&pkg.version_file))?;
+        let content = version_content(&version_path, &release.version)?;
+        writes.push((version_path, content));
     }
     writes.push((
         checked_path(root, Path::new(".changenote/releases.json"))?,
