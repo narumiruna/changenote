@@ -55,19 +55,22 @@ checkout_work() {
   work="$temp/work"
   git worktree add --detach "$work" "$1"
   cd "$work"
+  [[ ! -L .changenote/releases.json ]] || fail 'Action output paths cannot be symlinks: .changenote/releases.json'
 }
 
 stage_release() {
   local plan=$1 path
   local paths=(.changenote/releases.json)
   while IFS= read -r -d '' path; do
-    [[ ! -L $path ]] || fail "Action output paths cannot be symlinks: $path"
     paths+=("$path")
   done < <(jq -j --slurpfile config .changenote/config.json \
     '.[] | $config[0].packages[.package] | (.path + "/" + .version_file + "\u0000"), (.path + "/CHANGELOG.md\u0000")' "$plan")
   while IFS= read -r -d '' path; do
     if [[ $path == .changenote/*.md && ${path#.changenote/} != */* ]]; then paths+=("$path"); fi
   done < <(git diff --diff-filter=D --name-only -z)
+  for path in "${paths[@]}"; do
+    [[ ! -L $path ]] || fail "Action output paths cannot be symlinks: $path"
+  done
   git --literal-pathspecs add -- "${paths[@]}"
 }
 
