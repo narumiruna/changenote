@@ -37,8 +37,8 @@ setup() {
   cp -- "$(command -v changenote)" "$temp/changenote"
   cli="$temp/changenote"
   gh api "repos/$GITHUB_REPOSITORY" > "$temp/repo.json"
-  # Installation tokens can omit permissions; Git and API writes enforce access.
-  jq -e '.permissions.push != false' "$temp/repo.json" >/dev/null || fail 'Repository write permission is required.'
+  # Repository permissions do not describe installation token access.
+  # Git pushes and API writes enforce the token's actual permissions.
   jq -e '.clone_url | type == "string"' "$temp/repo.json" >/dev/null || fail 'Repository clone URL is required.'
   remote_url=$(jq -r '.clone_url' "$temp/repo.json")
   base=${INPUT_BASE_BRANCH:-$(jq -r '.default_branch' "$temp/repo.json")}
