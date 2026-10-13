@@ -23,6 +23,22 @@ For a monorepo, configure explicit package names, repository-relative package pa
 Each package directory must exist and contain a stable SemVer version file.
 Do not replace an existing configuration to add a note.
 
+### Configuration JSON Schema
+
+The optional `$schema` field in `.changenote/config.json` enables editor validation and completion.
+`init` adds this reference:
+
+```json
+"$schema": "https://raw.githubusercontent.com/narumiruna/changenote/main/schema.json"
+```
+
+Replace `main` with a commit SHA to pin the schema, or use a local schema path.
+Keep an existing schema reference unless a change is in scope.
+Configurations without `$schema` remain supported.
+The CLI accepts `$schema` as metadata; it does not fetch the schema or use it for validation.
+Unknown configuration fields are rejected.
+Run `status` to check the configuration, paths, files, and versions; editor validation does not replace CLI checks.
+
 ## Add or Update a Note
 
 1. Identify the user-visible change and affected package names from the configuration, not directory names or guessed manifest names.
