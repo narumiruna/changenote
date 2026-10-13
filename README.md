@@ -166,4 +166,4 @@ The existing [changenote PyPI project](https://pypi.org/project/changenote/) is 
 
 The Rust CLI and Python distribution share the `changenote` release plan and root `CHANGELOG.md`; the current single release package uses `v<version>` tags. Python has no independent version file or bump. Its manifest uses a dynamic version from root `Cargo.toml`, so Python wheel metadata and the included Rust CLI version match. `VERSION` is not synchronized with Cargo automatically; align the Rust crate version with that release-plan version and update lockfiles before publication.
 
-CI runs Rust format checks, lint checks, and tests on Linux, macOS, and Windows, plus Python wrapper tests, binary wheel builds, and uvx checks on Python 3.10 and 3.14 on those platforms. The container image uses the Rust executable; mount a repository at `/repo` to use it.
+CI runs Rust format checks, lint checks, and tests on Linux, macOS, and Windows, plus Python wrapper tests, binary wheel builds, and uvx checks on Python 3.12 and 3.14 on those platforms. The container image uses the Rust executable; mount a repository at `/repo` to use it.
