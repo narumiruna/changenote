@@ -39,13 +39,13 @@ if args[0] == "api":
         else {}
     )
     if endpoint == "repos/test/repo":
-        emit(
-            {
-                "permissions": {"push": not state.get("no_write")},
-                "clone_url": state["remote"],
-                "default_branch": "main",
-            }
-        )
+        repo = {
+            "clone_url": state["remote"],
+            "default_branch": "main",
+        }
+        if not state.get("omit_permissions"):
+            repo["permissions"] = {"push": not state.get("no_write")}
+        emit(repo)
     if "/pulls?" in endpoint:
         for pr in state["pulls"]:
             sha = subprocess.check_output(

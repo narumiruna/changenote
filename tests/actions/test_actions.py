@@ -156,6 +156,21 @@ class Actions(unittest.TestCase):
         self.assertEqual(outputs["pr-operation"], "closed")
         self.assertTrue(self.git("ls-remote", "origin", "refs/heads/" + BRANCH))
 
+    def test_pr_with_installation_token_without_permissions(self):
+        self.set_state(omit_permissions=True)
+        self.note()
+        _, outputs = self.action()
+        self.assertEqual(outputs["pr-operation"], "created")
+        self.assertTrue(self.git("ls-remote", "origin", "refs/heads/" + BRANCH))
+
+    def test_publish_with_installation_token_without_permissions(self):
+        release = self.release()
+        self.set_state(omit_permissions=True)
+        _, outputs = self.action("publish")
+        self.assertEqual(outputs["release-commit"], release)
+        self.assertEqual(outputs["published"], "true")
+        self.assertEqual(len(self.state()["releases"]), 1)
+
     def test_closed_and_merged_pr_next_batch(self):
         self.note()
         self.action()
