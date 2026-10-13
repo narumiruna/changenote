@@ -31,6 +31,7 @@ jobs:
       - run: cargo build --locked
       - run: uv run --no-project python -m unittest discover -s tests/actions -v
       - run: uv run --no-project --with pyyaml python -m unittest discover -s tests/action_metadata -v
+      - run: uv run --no-project python -m unittest discover -s tests/python_release -v
 
   python:
     runs-on: ubuntu-latest

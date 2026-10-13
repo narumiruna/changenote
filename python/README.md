@@ -13,7 +13,7 @@ uvx changenote --help
 uvx changenote status
 ```
 
-This binary-wrapper version has not yet been uploaded; existing PyPI releases are unchanged. To test a local wheel, run from the repository root:
+The Release workflow publishes this binary-wrapper distribution after its PyPI trusted publisher is configured. To test a local wheel, run from the repository root:
 
 ```sh
 uv build --out-dir dist/python-binary
@@ -39,6 +39,38 @@ uv cache keys include the Rust sources and Cargo manifests, so Rust edits cause 
 
 The Python distribution uses `dynamic = ["version"]`: maturin reads the version directly from root `Cargo.toml`. The wheel metadata and the packaged CLI's `--version` therefore use the same Rust crate version; do not add a separate Python manifest version.
 
-Release notes are collected under `changenote`, with the changelog at root `CHANGELOG.md`. The current single release package uses `v<version>` tags. Changenote does not yet update `Cargo.toml` from root `VERSION`. Before publication, make the Rust crate version match that release-plan version and update lockfiles; use a version that is not already published on PyPI.
+Release notes are collected under `changenote`, with the changelog at root `CHANGELOG.md`. The current single release package uses `v<version>` tags. Changenote does not update committed Cargo files from root `VERSION`. For manual publication, make the Rust crate version match `VERSION` and update lockfiles first. Use a version that is not already published on PyPI.
 
-This package does not provide Python bindings to the Rust library. Registry publication and a production multi-platform wheel release pipeline are not configured.
+## Automated publication
+
+The repository's `.github/workflows/release.yml` uses the same core approach as uv: maturin Action builds distributions, and `uv publish` uploads them with Trusted Publishing.
+
+```mermaid
+flowchart LR
+    A[Validated release commit] --> B[Set disposable Cargo build version]
+    B --> C[Build and test platform wheels]
+    B --> D[Build source archive]
+    C --> E[Collect artifacts]
+    D --> E
+    E --> F[uv publish with PyPI OIDC]
+```
+
+Supported wheels:
+
+- Linux x86_64 and aarch64, built in manylinux 2.17 containers.
+- macOS x86_64 and aarch64.
+- Windows x86_64.
+
+Each wheel is installed and its CLI version is checked on its native runner. One Linux job also builds the source archive. Alpine/musl wheels and Windows ARM64 wheels are not included.
+
+Builds use the release commit returned by the publication Action, not the latest main tree. The preparation script from the workflow revision checks the saved batch against `VERSION`, then sets only the root package versions in `Cargo.toml` and `Cargo.lock` in a disposable checkout. Dependency versions and committed release files are unchanged. Wheel metadata and the CLI version therefore match `VERSION`.
+
+Before enabling uploads:
+
+1. Create the GitHub environment `pypi`. Restrict deployments to `main`; add required reviewers if approval is needed.
+2. In the existing PyPI project's **Publishing** settings, add a GitHub trusted publisher with owner `narumiruna`, repository `changenote`, workflow filename `release.yml`, and environment `pypi`.
+3. Confirm that the next release version is unused on PyPI. No API token secret is needed; the upload job has only `id-token: write` permission.
+
+After a partial failure, rerun **Release** on `main`. Wheel builds run even when the GitHub tag and Release already exist. `uv publish --check-url https://pypi.org/simple/` skips matching files that were already uploaded and rejects conflicting contents. A rebuilt artifact can differ from an earlier upload; inspect conflicts instead of replacing published files. Do not merge another Release PR until the current batch is fully published. The workflow discovers only the latest batch.
+
+This package does not provide Python bindings to the Rust library.

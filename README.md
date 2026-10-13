@@ -171,7 +171,7 @@ Publication selects the latest first-parent commit that changes `.changenote/rel
 
 Existing remote tags must point to the selected commit. Missing tags and GitHub Releases are created; existing release text is not replaced. Draft releases, missing tags for existing releases, malformed batches, batch deletion, manually edited release trees, and tag conflicts stop publication. A batch in a root commit cannot be verified. No batch is a no-op.
 
-The repository's `.github/workflows/release.yml` runs both jobs on pushes to `main` or manual dispatch. It builds the CLI instead of installing it and does not push version commits directly to `main`.
+The repository's `.github/workflows/release.yml` runs PR management and GitHub publication on pushes to `main` or manual dispatch. It builds the CLI instead of installing it and does not push version commits directly to `main`. It then builds Python distributions from the validated release commit and uploads them to PyPI with `uv publish` and Trusted Publishing. See `python/README.md` for supported platforms and required publisher settings. These repository-specific jobs are not part of the reusable Actions.
 
 ### Inputs and outputs
 
@@ -244,6 +244,7 @@ actionlint
 cargo build --locked
 uv run --no-project python -m unittest discover -s tests/actions -v
 uv run --no-project --with pyyaml python -m unittest discover -s tests/action_metadata -v
+uv run --no-project python -m unittest discover -s tests/python_release -v
 ```
 
 Action tests use temporary consumer repositories and a file-backed GitHub mock. They do not create remote GitHub tags or releases.
@@ -261,8 +262,8 @@ uvx --isolated --no-index --find-links dist/python-binary changenote --help
 
 The Python distribution `changenote`, with wrapper sources in `python/changenote`, packages the Rust executable using maturin `bin` bindings, like uv. It does not reimplement the CLI in Python. Compatible wheels require no Rust toolchain at runtime; source builds require Rust and Cargo. The optional `python -m changenote` runner invokes the installed executable.
 
-The existing [changenote PyPI project](https://pypi.org/project/changenote/) is the publication target. After publishing this binary-wrapper version and platform wheels, users can run `uvx changenote status`. This wrapper has not yet been uploaded, and a production multi-platform wheel release pipeline is not configured. See `python/README.md`.
+The existing [changenote PyPI project](https://pypi.org/project/changenote/) is the publication target. The Release workflow builds platform wheels with maturin Action and publishes with `uv publish`. Configure its PyPI trusted publisher before the first upload. After a successful publication, users on supported platforms can run `uvx changenote status`. See `python/README.md`.
 
-The Rust CLI and Python distribution share the `changenote` release plan and root `CHANGELOG.md`; the current single release package uses `v<version>` tags. Python has no independent version file or bump. Its manifest uses a dynamic version from root `Cargo.toml`, so Python wheel metadata and the included Rust CLI version match. `VERSION` is not synchronized with Cargo automatically; align the Rust crate version with that release-plan version and update lockfiles before publication.
+The Rust CLI and Python distribution share the `changenote` release plan and root `CHANGELOG.md`; the current single release package uses `v<version>` tags. Python has no independent version file or bump. Its manifest uses a dynamic version from root `Cargo.toml`, so Python wheel metadata and the included Rust CLI version match. The PyPI workflow sets the Cargo package and its Cargo.lock entry to the release's `VERSION` in a disposable build checkout. It does not change the committed Cargo files. For manual publication, align the Rust crate version with `VERSION` and update lockfiles first.
 
 CI currently runs on Ubuntu only. It runs Rust format checks, lint checks, and tests, plus Python wrapper tests, binary wheel builds, and uvx checks with Python 3.14. The container image uses the Rust executable; mount a repository at `/repo` to use it.
