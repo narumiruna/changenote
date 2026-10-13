@@ -240,7 +240,7 @@ wheels = [
 ]
 
 [[package]]
-name = "pythontemplate"
+name = "changenote"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
