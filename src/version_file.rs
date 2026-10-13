@@ -1,3 +1,4 @@
+use crate::json_value::JsonValue;
 use anyhow::{Context, Result, ensure};
 use semver::Version;
 use std::{fs, path::Path};
@@ -6,7 +7,7 @@ use toml_edit::DocumentMut;
 // The configured filename selects the version field. Other filenames remain plain text.
 enum VersionFile {
     Plain,
-    Json(serde_json::Value),
+    Json(JsonValue),
     Toml(DocumentMut, &'static str),
 }
 
@@ -39,18 +40,19 @@ impl VersionFile {
             _ => Self::Plain,
         };
         let text = match &file {
-            Self::Plain => content.trim(),
+            Self::Plain => content.trim().to_owned(),
             Self::Json(document) => document
                 .get("version")
-                .and_then(|value| value.as_str())
+                .and_then(JsonValue::as_string)
                 .context("package.json requires a string version field")?,
             Self::Toml(document, section) => document
                 .get(section)
                 .and_then(|item| item.get("version"))
                 .and_then(|item| item.as_str())
-                .with_context(|| format!("{section}.version must be an explicit string"))?,
+                .with_context(|| format!("{section}.version must be an explicit string"))?
+                .to_owned(),
         };
-        let version = Version::parse(text)?;
+        let version = Version::parse(&text)?;
         ensure!(
             version.pre.is_empty() && version.build.is_empty(),
             "only stable SemVer versions are supported"
@@ -71,7 +73,8 @@ pub(crate) fn version_content(path: &Path, version: &Version) -> Result<String> 
     match file {
         VersionFile::Plain => Ok(format!("{version}\n")),
         VersionFile::Json(mut document) => {
-            document["version"] = serde_json::Value::String(version.to_string());
+            *document.get_mut("version").context("missing version")? =
+                serde_json::from_str(&serde_json::to_string(&version.to_string())?)?;
             Ok(format!("{}\n", serde_json::to_string_pretty(&document)?))
         }
         VersionFile::Toml(mut document, section) => {

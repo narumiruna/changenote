@@ -1,3 +1,4 @@
+mod json_value;
 mod version_file;
 
 use anyhow::{Context, Result, ensure};
