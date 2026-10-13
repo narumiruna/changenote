@@ -101,7 +101,7 @@ Both require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `c
 Use this workflow in a consumer repository. Replace each SHA placeholder with a reviewed full commit SHA. The CLI and Action must use compatible release-plan formats.
 
 ```yaml
-name: Release PR
+name: Release
 on:
   push:
     branches: [main]
@@ -163,21 +163,13 @@ PRs created with the default `GITHUB_TOKEN` do not automatically trigger PR work
 
 The automatic workflow above runs publication after PR management. Publication can recover an earlier batch even if PR management fails. Its job needs only `contents: write`.
 
-For a separate publication retry workflow, use **only** `workflow_dispatch`, the same concurrency group, and the publication job's checkout and install steps. Its final step is:
-
-```yaml
-- uses: narumiruna/changenote/publish@<full-action-commit-sha>
-  with:
-    base-branch: main
-```
-
-Use the **same concurrency group** for automatic and manual workflows. Do not create two push-triggered workflows in that group: GitHub can cancel a pending run even with `cancel-in-progress: false`. Keep required publication steps in the automatic workflow: tags pushed with `GITHUB_TOKEN` do not trigger other push workflows.
+To retry a partial publication failure, run **Release** manually on `main`. This runs both PR management and publication again. They use one workflow concurrency group, so no separate retry workflow is needed. Keep required publication steps in this workflow: tags pushed with `GITHUB_TOKEN` do not trigger other push workflows.
 
 Publication selects the latest first-parent commit that changes `.changenote/releases.json`. It reconstructs that commit from the parent's notes and compares the complete generated tree before publication. Standard merge, squash, and rebase merges are supported. A later unrelated commit or new pending notes do not change the release target.
 
 Existing remote tags must point to the selected commit. Missing tags and GitHub Releases are created; existing release text is not replaced. Draft releases, missing tags for existing releases, malformed batches, batch deletion, manually edited release trees, and tag conflicts stop publication. A batch in a root commit cannot be verified. No batch is a no-op.
 
-The repository's `.github/workflows/release-pr.yml` runs both jobs on pushes to `main` or manual dispatch. `.github/workflows/release.yml` is a publication-only manual retry. They build the CLI instead of installing it. Neither pushes version commits directly to `main`.
+The repository's `.github/workflows/release.yml` runs both jobs on pushes to `main` or manual dispatch. It builds the CLI instead of installing it and does not push version commits directly to `main`.
 
 ### Inputs and outputs
 
@@ -194,7 +186,7 @@ The publication Action outputs `release-commit` (commit SHA or empty string), `p
 
 ### Recovery and limits
 
-Disable both workflows to stop automation. Unmerged Release PR changes do not affect the base branch.
+Disable the Release workflow to stop automation. Unmerged Release PR changes do not affect the base branch.
 
 After a partial publication failure, rerun `Release`. The Action uses the saved release commit even after unrelated commits. Do not merge another Release PR until the current batch is fully published: discovery covers only the latest batch. History rewrites or manual batch edits require manual inspection. Never move tags automatically.
 

@@ -20,14 +20,13 @@ Use composite Actions with small Bash scripts, Git, `gh`, and `jq`. The first su
 - Root `action.yml`: create or update a Release PR.
 - `publish/action.yml`: publish the latest committed release batch from its release commit.
 - `scripts/action/`: implementation scripts grouped by responsibility.
-- `.github/workflows/release-pr.yml`: run PR management and then publication in separate jobs on pushes to `main` and manual dispatch. Each job has its own minimum permissions.
-- `.github/workflows/release.yml`: run publication only on manual dispatch for recovery; remove direct version commits to `main`.
+- `.github/workflows/release.yml`: run PR management and then publication in separate jobs on pushes to `main` and manual dispatch. Each job has its own minimum permissions. Manual runs also provide publication recovery. The separate retry workflow was removed at the user's request.
 
-Implementation correction: GitHub permits only one pending run per concurrency group and can replace that pending run even with `cancel-in-progress: false`. Two push-triggered workflows could therefore cancel one of the required operations. The automatic workflow now contains both jobs, and the second workflow is a manual publication retry. This preserves the goal and strengthens lifecycle safety.
+Implementation correction: GitHub permits only one pending run per concurrency group and can replace that pending run even with `cancel-in-progress: false`. Two push-triggered workflows could therefore cancel one of the required operations. The single Release workflow contains both jobs and also supports manual retries. This preserves the goal and strengthens lifecycle safety.
 
 The Rust CLI remains responsible for note validation, version changes, changelogs, release plans, and local annotated tags.
 
-Both workflows use the same concurrency group with `cancel-in-progress: false`. Each run fetches the current base branch after it acquires the lock; an older queued event must not replace a newer PR state.
+The Release workflow uses one concurrency group with `cancel-in-progress: false`. Each run fetches the current base branch after it acquires the lock; an older queued event must not replace a newer PR state.
 
 The PR Action requires a checked-out repository and an installed `changenote` binary. It does not install or build the CLI. In this repository, the workflow builds the CLI. External repositories install a pinned CLI revision. Document this requirement rather than adding an installation subsystem.
 
@@ -113,7 +112,7 @@ Remote tags and GitHub Releases determine publication state. A tag at a differen
 
 ## Rollback / Recovery
 
-Disable the two release workflows to stop automation. Close the managed Release PR if necessary; unmerged PR version changes do not affect the base branch.
+Disable the Release workflow to stop automation. Close the managed Release PR if necessary; unmerged PR version changes do not affect the base branch.
 
 After a release PR has merged, retry publication from the discovered release commit. Existing correct tags and releases remain unchanged. If a tag points to another commit, stop and require manual review. Do not delete releases, move tags, or roll back published versions automatically.
 

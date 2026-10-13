@@ -61,31 +61,30 @@ class Metadata(unittest.TestCase):
             self.assertFalse((fixture.repo / "scripts/action").exists())
 
     def test_triggers_concurrency_and_permissions(self):
-        pr = read_yaml(ROOT / ".github/workflows/release-pr.yml")
-        publish = read_yaml(ROOT / ".github/workflows/release.yml")
-        self.assertEqual(pr["concurrency"], publish["concurrency"])
-        self.assertEqual(pr["concurrency"]["cancel-in-progress"], "false")
-        self.assertEqual(pr["permissions"], {"contents": "read"})
+        workflow = read_yaml(ROOT / ".github/workflows/release.yml")
+        self.assertFalse((ROOT / ".github/workflows/release-pr.yml").exists())
+        self.assertEqual(workflow["name"], "Release")
+        self.assertEqual(workflow["concurrency"]["group"], "changenote-release-main")
+        self.assertEqual(workflow["concurrency"]["cancel-in-progress"], "false")
+        self.assertEqual(workflow["permissions"], {"contents": "read"})
         self.assertEqual(
-            pr["jobs"]["release"]["permissions"],
+            workflow["jobs"]["release"]["permissions"],
             {"contents": "write", "pull-requests": "write"},
         )
-        self.assertEqual(pr["jobs"]["publish"]["permissions"], {"contents": "write"})
-        self.assertEqual(pr["jobs"]["publish"]["needs"], "release")
-        self.assertIn("always()", pr["jobs"]["publish"]["if"])
-        self.assertEqual(publish["permissions"], {"contents": "write"})
-        self.assertEqual(set(pr["on"]), {"push", "workflow_dispatch"})
-        self.assertEqual(pr["on"]["push"]["branches"], ["main"])
-        self.assertEqual(set(publish["on"]), {"workflow_dispatch"})
-        for workflow in (pr, publish):
-            self.assertEqual(
-                workflow["jobs"]["release"]["if"], "github.ref == 'refs/heads/main'"
-            )
-            checkout = workflow["jobs"]["release"]["steps"][0]
-            self.assertEqual(checkout["with"]["persist-credentials"], "false")
-        self.assertEqual(pr["jobs"]["release"]["steps"][-1]["uses"], "./")
-        self.assertEqual(pr["jobs"]["publish"]["steps"][-1]["uses"], "./publish")
-        self.assertEqual(publish["jobs"]["release"]["steps"][-1]["uses"], "./publish")
+        self.assertEqual(
+            workflow["jobs"]["publish"]["permissions"], {"contents": "write"}
+        )
+        self.assertEqual(workflow["jobs"]["publish"]["needs"], "release")
+        self.assertIn("always()", workflow["jobs"]["publish"]["if"])
+        self.assertEqual(set(workflow["on"]), {"push", "workflow_dispatch"})
+        self.assertEqual(workflow["on"]["push"]["branches"], ["main"])
+        self.assertEqual(
+            workflow["jobs"]["release"]["if"], "github.ref == 'refs/heads/main'"
+        )
+        for job in workflow["jobs"].values():
+            self.assertEqual(job["steps"][0]["with"]["persist-credentials"], "false")
+        self.assertEqual(workflow["jobs"]["release"]["steps"][-1]["uses"], "./")
+        self.assertEqual(workflow["jobs"]["publish"]["steps"][-1]["uses"], "./publish")
         ci = read_yaml(ROOT / ".github/workflows/ci.yml")
         self.assertTrue({"actions", "python", "check"}.issubset(ci["jobs"]))
 
@@ -105,9 +104,9 @@ class Metadata(unittest.TestCase):
             workflow["jobs"]["release"]["steps"][-1]["uses"],
             "narumiruna/changenote@<full-action-commit-sha>",
         )
-        publish = yaml.load(blocks[1], Loader=yaml.BaseLoader)
         self.assertEqual(
-            publish[0]["uses"], "narumiruna/changenote/publish@<full-action-commit-sha>"
+            workflow["jobs"]["publish"]["steps"][-1]["uses"],
+            "narumiruna/changenote/publish@<full-action-commit-sha>",
         )
         for path in (ROOT / "action.yml", ROOT / "publish/action.yml"):
             action = read_yaml(path)
