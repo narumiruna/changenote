@@ -11,13 +11,13 @@ repos:
     hooks:
       - id: rustfmt
         name: Rust format
-        entry: cargo fmt --check
+        entry: cargo fmt --all --check
         language: system
         pass_filenames: false
         types: [rust]
       - id: clippy
         name: Rust lint
-        entry: cargo clippy --locked --all-targets -- -D warnings
+        entry: cargo clippy --locked --workspace --all-targets -- -D warnings
         language: system
         pass_filenames: false
         types: [rust]

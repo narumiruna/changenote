@@ -1,5 +1,5 @@
 {
   "packages": {
-    "changenote": { "path": ".", "version_file": "VERSION" }
+    "changenote": { "path": "crates/cli", "version_file": "VERSION" }
   }
 }

@@ -9,7 +9,7 @@ Each package has an explicit directory and a plain-text version file. No languag
 Requires stable Rust with edition 2024 support. Git is required only for `tag`.
 
 ```sh
-cargo install --path . --locked
+cargo install --path crates/cli --locked
 ```
 
 ## Single package
@@ -124,11 +124,26 @@ The saved batch supports retries after the version commit. Existing tags are acc
 
 ## Development
 
+The repository is a Cargo workspace. Its first member is `crates/cli`, with package and executable name `changenote`.
+
+- `Cargo.toml`: workspace members and resolver.
+- `Cargo.lock`: shared dependency lockfile.
+- `crates/cli/Cargo.toml`: CLI package metadata and dependencies.
+- `crates/cli/src/`: CLI and release logic.
+- `crates/cli/tests/`: integration tests.
+- `crates/cli/VERSION`: CLI release version file.
+- `.changenote/`: repository-level notes and release configuration.
+
+Run checks from the repository root:
+
 ```sh
-cargo fmt --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
-cargo build --locked --release
+cargo fmt --all --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace
+cargo build --locked --release -p changenote
+cargo run --locked -p changenote -- status
 ```
+
+The CLI is the default workspace member, so `cargo run -- status` also works from the repository root. Build outputs remain in root `target/`. The release configuration points to `crates/cli`, so its changelog is written to `crates/cli/CHANGELOG.md`. With one configured release package, tags still use `v<version>`; scoped tags start when a second release package is configured.
 
 CI runs format checks, lint checks, and tests on Linux, macOS, and Windows. The container image uses the Rust executable; mount a repository at `/repo` to use it.
