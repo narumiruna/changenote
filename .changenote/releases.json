@@ -1,12 +1,14 @@
 [
   {
     "package": "changenote",
-    "old_version": "0.1.1",
-    "version": "0.1.2",
-    "bump": "patch",
-    "tag": "v0.1.2",
+    "old_version": "0.1.2",
+    "version": "0.2.0",
+    "bump": "minor",
+    "tag": "v0.2.0",
     "notes": [
-      "Fix Linux Python release builds by creating the distribution directory with runner ownership before the manylinux container writes artifacts."
+      "Support optional $schema metadata in configuration and provide a repository JSON Schema for editor validation and completion.\n\nBreaking Rust API change: Config now has a public schema: Option<String> field. Add schema: None to existing struct literals. Include schema in exhaustive destructuring, or use .. to ignore it. Existing configuration files remain supported.",
+      "Support pyproject.toml, Cargo.toml, and package.json as configured version files while retaining plain-text VERSION support.",
+      "Preserve exact numbers and objects in unrelated package.json fields when updating the version, including objects with serde_json private keys."
     ]
   }
 ]

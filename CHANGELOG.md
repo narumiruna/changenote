@@ -1,3 +1,13 @@
+## 0.2.0
+
+- Support optional $schema metadata in configuration and provide a repository JSON Schema for editor validation and completion.
+  
+  Breaking Rust API change: Config now has a public schema: Option<String> field. Add schema: None to existing struct literals. Include schema in exhaustive destructuring, or use .. to ignore it. Existing configuration files remain supported.
+
+- Support pyproject.toml, Cargo.toml, and package.json as configured version files while retaining plain-text VERSION support.
+
+- Preserve exact numbers and objects in unrelated package.json fields when updating the version, including objects with serde_json private keys.
+
 ## 0.1.2
 
 - Fix Linux Python release builds by creating the distribution directory with runner ownership before the manylinux container writes artifacts.
