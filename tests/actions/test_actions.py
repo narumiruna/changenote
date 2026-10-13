@@ -189,15 +189,38 @@ class Actions(unittest.TestCase):
         self.assertIn("exceed", pr["body"])
         self.assertEqual(pr["title"], self.env["INPUT_PR_TITLE"])
 
-    def test_reject_dirty_invalid_notes_and_no_permission(self):
+    def test_pr_with_false_repository_push_permission(self):
+        self.set_state(no_write=True)
+        self.note()
+        _, outputs = self.action()
+        self.assertEqual(outputs["pr-operation"], "created")
+        self.assertTrue(self.git("ls-remote", "origin", "refs/heads/" + BRANCH))
+
+    def test_publish_with_false_repository_push_permission(self):
+        release = self.release()
+        self.set_state(no_write=True)
+        _, outputs = self.action("publish")
+        self.assertEqual(outputs["release-commit"], release)
+        self.assertEqual(outputs["published"], "true")
+        self.assertEqual(len(self.state()["releases"]), 1)
+
+    def test_pr_push_denial_is_not_hidden(self):
+        self.note()
+        self.set_state(no_write=True)
+        hook = self.remote / "hooks/pre-receive"
+        hook.write_text("#!/usr/bin/env bash\nexit 1\n")
+        hook.chmod(0o755)
+        result, _ = self.action(ok=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("remote rejected", result.stderr)
+        self.assertFalse(self.git("ls-remote", "origin", "refs/heads/" + BRANCH))
+        self.assertEqual(self.state()["pulls"], [])
+
+    def test_reject_dirty_and_invalid_notes(self):
         (self.repo / "untracked").write_text("x")
         result, _ = self.action(ok=False)
         self.assertIn("clean checkout", result.stderr)
         (self.repo / "untracked").unlink()
-        self.set_state(no_write=True)
-        result, _ = self.action(ok=False)
-        self.assertIn("write permission", result.stderr)
-        self.set_state(no_write=False)
         (self.repo / ".changenote/bad.md").write_text("bad")
         self.commit("invalid note")
         self.git("push", "origin", "main")
