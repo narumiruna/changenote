@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/narumiruna/changenote/main/schema.json",
+  "title": "changenote configuration",
+  "description": "Packages managed by changenote. Paths and version files are also checked by the CLI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["packages"],
+  "properties": {
+    "$schema": {
+      "description": "Schema reference for editors. The CLI does not fetch or validate this reference.",
+      "type": ["string", "null"]
+    },
+    "packages": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[A-Za-z0-9_-]+$" },
+      "additionalProperties": { "$ref": "#/$defs/package" }
+    }
+  },
+  "$defs": {
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "version_file"],
+      "properties": {
+        "path": {
+          "description": "Package directory relative to the repository root. Parent components are not allowed.",
+          "type": "string",
+          "minLength": 1
+        },
+        "version_file": {
+          "description": "Version file relative to the package directory. Use VERSION, pyproject.toml, Cargo.toml, or package.json. Parent components are not allowed.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

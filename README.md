@@ -55,12 +55,15 @@ Create `.changenote/config.json` with explicit packages:
 
 ```json
 {
+  "$schema": "https://raw.githubusercontent.com/narumiruna/changenote/main/schema.json",
   "packages": {
     "pkg-a": { "path": "packages/pkg-a", "version_file": "VERSION" },
     "pkg-b": { "path": "packages/pkg-b", "version_file": "VERSION" }
   }
 }
 ```
+
+The optional `$schema` field enables editor validation and completion with the repository's [JSON Schema](schema.json). `init` adds the GitHub raw URL shown above. Replace `main` with a commit SHA to pin the schema, or use a local schema path. The CLI accepts the field as metadata; it does not fetch the schema or use it for validation. Configurations without `$schema` remain supported. Unknown configuration fields are rejected. The CLI also checks paths, files, and versions that the schema cannot verify.
 
 Each package directory must exist and contain its version file, for example `packages/pkg-a/VERSION`:
 
