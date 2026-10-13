@@ -36,6 +36,8 @@ jobs:
           base-branch: main
 
   publish:
+    outputs:
+      release-commit: ${{ steps.publish.outputs.release-commit }}
     needs: release
     if: ${{ always() && github.ref == 'refs/heads/main' && needs.release.result != 'cancelled' }}
     permissions:
@@ -54,5 +56,88 @@ jobs:
           cargo build --locked --release
           echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
       - uses: ./publish
+        id: publish
         with:
           base-branch: main
+
+  wheels:
+    needs: publish
+    if: ${{ always() && needs.publish.result == 'success' && needs.publish.outputs.release-commit != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-14
+            target: aarch64-apple-darwin
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.publish.outputs.release-commit }}
+          persist-credentials: false
+          path: source
+      # Build scripts come from this workflow revision, not an older release.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          path: workflow
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.12'
+      - name: Set release build version
+        shell: bash
+        run: uv run --no-project python workflow/scripts/prepare-python-release.py source
+      - name: Build wheel
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          working-directory: source
+          maturin-version: v1.15.0
+          target: ${{ matrix.target }}
+          manylinux: 2_17
+          args: --release --locked --out dist --compatibility pypi
+      - name: Check installed wheel version
+        shell: bash
+        working-directory: source
+        run: |
+          actual=$(uvx --isolated --no-index --find-links dist changenote --version)
+          test "$actual" = "changenote $(tr -d '\r\n' < VERSION)"
+      - name: Build source archive
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          working-directory: source
+          maturin-version: v1.15.0
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-${{ matrix.target }}
+          path: source/dist/*
+          if-no-files-found: error
+
+  pypi:
+    needs: [publish, wheels]
+    if: ${{ always() && needs.publish.result == 'success' && needs.wheels.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/changenote/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: python-*
+          merge-multiple: true
+          path: dist
+      - uses: astral-sh/setup-uv@v7
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ dist/*

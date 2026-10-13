@@ -1,9 +1,9 @@
 """Check Action/workflow YAML and execute composite run commands in a consumer fixture."""
 
-from pathlib import Path
 import re
 import sys
 import unittest
+from pathlib import Path
 
 import yaml
 
@@ -81,12 +81,63 @@ class Metadata(unittest.TestCase):
         self.assertEqual(
             workflow["jobs"]["release"]["if"], "github.ref == 'refs/heads/main'"
         )
-        for job in workflow["jobs"].values():
+        for name in ("release", "publish", "wheels"):
+            job = workflow["jobs"][name]
             self.assertEqual(job["steps"][0]["with"]["persist-credentials"], "false")
         self.assertEqual(workflow["jobs"]["release"]["steps"][-1]["uses"], "./")
         self.assertEqual(workflow["jobs"]["publish"]["steps"][-1]["uses"], "./publish")
         ci = read_yaml(ROOT / ".github/workflows/ci.yml")
         self.assertTrue({"actions", "python", "check"}.issubset(ci["jobs"]))
+
+    def test_pypi_builds_validated_commit_and_retries(self):
+        jobs = read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]
+        self.assertEqual(
+            jobs["publish"]["outputs"]["release-commit"],
+            "${{ steps.publish.outputs.release-commit }}",
+        )
+        wheels = jobs["wheels"]
+        self.assertEqual(wheels["needs"], "publish")
+        self.assertIn("needs.publish.result == 'success'", wheels["if"])
+        self.assertIn("needs.publish.outputs.release-commit != ''", wheels["if"])
+        self.assertNotIn("outputs.published", wheels["if"])
+        self.assertEqual(
+            wheels["steps"][0]["with"]["ref"],
+            "${{ needs.publish.outputs.release-commit }}",
+        )
+        targets = {entry["target"] for entry in wheels["strategy"]["matrix"]["include"]}
+        self.assertEqual(
+            targets,
+            {
+                "x86_64-unknown-linux-gnu",
+                "aarch64-unknown-linux-gnu",
+                "x86_64-apple-darwin",
+                "aarch64-apple-darwin",
+                "x86_64-pc-windows-msvc",
+            },
+        )
+        build = next(
+            step for step in wheels["steps"] if step.get("name") == "Build wheel"
+        )
+        self.assertTrue(build["uses"].startswith("PyO3/maturin-action@"))
+        self.assertEqual(build["with"]["manylinux"], "2_17")
+        self.assertIn("--locked", build["with"]["args"])
+        self.assertIn("--compatibility pypi", build["with"]["args"])
+        sdist = next(
+            step
+            for step in wheels["steps"]
+            if step.get("name") == "Build source archive"
+        )
+        self.assertEqual(sdist["if"], "matrix.target == 'x86_64-unknown-linux-gnu'")
+        self.assertEqual(sdist["with"]["command"], "sdist")
+        pypi = jobs["pypi"]
+        self.assertEqual(pypi["needs"], ["publish", "wheels"])
+        self.assertIn("needs.wheels.result == 'success'", pypi["if"])
+        self.assertEqual(pypi["permissions"], {"id-token": "write"})
+        self.assertEqual(pypi["environment"]["name"], "pypi")
+        self.assertEqual(pypi["steps"][0]["with"]["pattern"], "python-*")
+        command = pypi["steps"][-1]["run"]
+        self.assertIn("uv publish --trusted-publishing always", command)
+        self.assertIn("--check-url https://pypi.org/simple/", command)
 
     def test_readme_examples_and_contracts(self):
         readme = (ROOT / "README.md").read_text()
