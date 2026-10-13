@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: changenote-release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GIT_AUTHOR_NAME: github-actions[bot]
+      GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      GIT_COMMITTER_NAME: github-actions[bot]
+      GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test and build
+        run: |
+          cargo test --locked
+          cargo build --locked --release
+      - name: Apply notes and commit version files
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./target/release/changenote version > "$RUNNER_TEMP/plan.json"
+          if [ "$(jq length "$RUNNER_TEMP/plan.json")" -eq 0 ]; then
+            echo "No pending notes. Retry the last committed release if present."
+            exit 0
+          fi
+          git add -- .changenote
+          while IFS= read -r package; do
+            mapfile -t paths < <(jq -r --arg package "$package" '
+              .packages[$package] | (.path + "/" + .version_file), (.path + "/CHANGELOG.md")
+            ' .changenote/config.json)
+            git add -- "${paths[@]}"
+          done < <(jq -r '.[].package' "$RUNNER_TEMP/plan.json")
+          git commit -m "chore(release): version packages"
+          git push origin HEAD:main
+      - name: Create tags and GitHub Releases
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f .changenote/releases.json ]; then
+            echo "No release plan."
+            exit 0
+          fi
+          ./target/release/changenote tag
+          while IFS= read -r release; do
+            tag=$(jq -r '.tag' <<< "$release")
+            git push origin "refs/tags/$tag"
+            notes=$(mktemp)
+            jq -r '.notes | join("\n\n")' <<< "$release" > "$notes"
+            if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+                --verify-tag --title "$tag" --notes-file "$notes"
+            fi
+            rm -- "$notes"
+          done < <(jq -c '.[]' .changenote/releases.json)

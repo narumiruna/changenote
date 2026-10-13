@@ -1,0 +1,5 @@
+{
+  "packages": {
+    "changenote": { "path": ".", "version_file": "VERSION" }
+  }
+}
