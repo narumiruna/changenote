@@ -32,6 +32,8 @@ pub struct Package {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
+    pub schema: Option<String>,
     pub packages: BTreeMap<String, Package>,
 }
 
@@ -275,6 +277,9 @@ pub fn init(root: &Path, name: &str, version: Version) -> Result<()> {
     );
     fs::create_dir(root.join(".changenote"))?;
     let config = Config {
+        schema: Some(
+            "https://raw.githubusercontent.com/narumiruna/changenote/main/schema.json".to_owned(),
+        ),
         packages: BTreeMap::from([(
             name.to_owned(),
             Package {
