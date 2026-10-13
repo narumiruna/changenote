@@ -101,6 +101,50 @@ fn preserves_exact_json_numbers_when_updating_version() {
 }
 
 #[test]
+fn preserves_json_objects_with_number_sentinel_keys() {
+    for value in ["1.0", "not a number"] {
+        let before = format!(
+            "{{\n  \"version\": \"1.2.3\",\n  \"custom\": {{\n    \"$serde_json::private::Number\": \"{value}\"\n  }},\n  \"values\": [\n    {{\n      \"$serde_json::private::Number\": \"{value}\"\n    }}\n  ]\n}}\n"
+        );
+        let dir = project("package.json", &before);
+        note(dir.path());
+        assert_eq!(
+            status(dir.path()).unwrap()[0].version,
+            Version::new(1, 3, 0)
+        );
+        version(dir.path()).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.path().join("package.json")).unwrap(),
+            before.replace("\"1.2.3\"", "\"1.3.0\"")
+        );
+    }
+}
+
+#[test]
+fn rejects_deeply_nested_json_without_writes() {
+    let content = format!(
+        "{{\"version\":\"1.2.3\",\"custom\":{}null{}}}",
+        "[".repeat(128),
+        "]".repeat(128)
+    );
+    let dir = project("package.json", &content);
+    fs::write(
+        dir.path().join(".changenote/change.md"),
+        "---\npkg: minor\n---\nChange\n",
+    )
+    .unwrap();
+    assert!(status(dir.path()).is_err());
+    assert!(version(dir.path()).is_err());
+    assert_eq!(
+        fs::read_to_string(dir.path().join("package.json")).unwrap(),
+        content
+    );
+    assert!(dir.path().join(".changenote/change.md").exists());
+    assert!(!dir.path().join("CHANGELOG.md").exists());
+    assert!(!dir.path().join(".changenote/releases.json").exists());
+}
+
+#[test]
 fn rejects_invalid_or_indirect_manifest_versions_without_writes() {
     for (filename, content) in [
         ("Cargo.toml", "[package]\nname = 'pkg'\n"),
