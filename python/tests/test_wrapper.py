@@ -56,7 +56,8 @@ class BinaryLocatorTests(unittest.TestCase):
                 patch("changenote.sysconfig.get_path", return_value=str(prefix / "missing")),
                 patch("changenote.__file__", str(module)),
             ):
-                self.assertEqual(find_changenote_bin(), str(binary))
+                # Module lookup resolves symlinks and Windows short path names.
+                self.assertEqual(Path(find_changenote_bin()).resolve(), binary.resolve())
 
 
 class RunnerTests(unittest.TestCase):

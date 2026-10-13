@@ -11,6 +11,25 @@ permissions:
   contents: read
 
 jobs:
+  actions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Check shell scripts and workflows
+        run: |
+          for script in scripts/action/*.sh; do bash -n "$script"; done
+          shellcheck -x scripts/action/*.sh
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
+          "$(go env GOPATH)/bin/actionlint"
+      - run: cargo build --locked
+      - run: uv run --no-project python -m unittest discover -s tests/actions -v
+      - run: uv run --no-project --with pyyaml python -m unittest discover -s tests/action_metadata -v
+
   python:
     runs-on: ${{ matrix.os }}
     strategy:
