@@ -42,10 +42,9 @@ setup() {
   base=${INPUT_BASE_BRANCH:-$(jq -r '.default_branch' "$temp/repo.json")}
   git check-ref-format "refs/heads/$base" || fail 'Invalid base branch.'
   auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
-  if [[ $(git rev-parse --is-shallow-repository) == true ]]; then
-    remote_git fetch --unshallow --no-tags "$remote_url"
-  fi
-  remote_git fetch --no-tags "$remote_url" "+refs/heads/$base:refs/remotes/origin/$base"
+  local fetch_args=(--no-tags)
+  if [[ $(git rev-parse --is-shallow-repository) == true ]]; then fetch_args+=(--unshallow); fi
+  remote_git fetch "${fetch_args[@]}" "$remote_url" "+refs/heads/$base:refs/remotes/origin/$base"
   base_sha=$(git rev-parse "refs/remotes/origin/$base")
   export GIT_AUTHOR_NAME='github-actions[bot]' GIT_COMMITTER_NAME='github-actions[bot]'
   export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'

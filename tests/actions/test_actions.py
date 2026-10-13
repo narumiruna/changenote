@@ -42,7 +42,11 @@ class Actions(unittest.TestCase):
         )
         (self.bin / "gh").chmod(0o755)
         shutil.copy2(CLI, self.bin / "changenote")
-        self.run_cmd(["git", "init", "--bare", str(self.remote)], cwd=self.top)
+        # An unborn remote HEAD proves that all fetches use the selected base ref.
+        self.run_cmd(
+            ["git", "init", "--bare", "--initial-branch=unused", str(self.remote)],
+            cwd=self.top,
+        )
         self.run_cmd(["git", "init", "-b", "main", str(self.repo)], cwd=self.top)
         self.git("remote", "add", "origin", str(self.remote))
         self.cli("init", "--name", "pkg", "--version", "1.0.0")

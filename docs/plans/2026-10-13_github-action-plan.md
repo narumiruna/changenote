@@ -101,6 +101,7 @@ Remote tags and GitHub Releases determine publication state. A tag at a differen
 - `uv sync --locked`, CLI status and module help, Python wrapper tests (10), wheel/source build, and isolated local-wheel `uvx` help checks pass.
 - `.changenote/github-release-action.md` requests `minor` for `changenote`. Status validation passes; the combined repository plan remains `major` because of an existing Python compatibility note.
 - Diff review checked explicit token use, trusted triggers, scoped staging, unchanged CLI contracts, worktree isolation, branch ownership, immutable tags, partial failure recovery, and pending-run lifecycle.
+- Initial PR CI run `38415703223` found an implicit remote-HEAD dependency in shallow fetches. Fetch now explicitly names the base ref, and all fixture remotes have an unborn default HEAD. It also exposed an existing Python path assertion failure on macOS/Windows (already present in main run `38409234152`). The assertion now compares resolved paths without changing wrapper behavior; local tests also pass with a symlinked temporary directory.
 - Hosted smoke tests remain blocked: the user prohibits package publication, version tags, and release workflow dispatch. No disposable repository or GitHub App token was supplied. Local tags exist only in temporary test repositories; no GitHub release or repository tag was created. The plan remains open and must not be deleted.
 
 ## Risks
