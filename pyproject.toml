@@ -8,7 +8,7 @@ license = "MIT"
 dependencies = []
 
 [build-system]
-requires = ["maturin>=1.9,<2"]
+requires = ["maturin>=1.15.0,<2"]
 build-backend = "maturin"
 
 [tool.maturin]
