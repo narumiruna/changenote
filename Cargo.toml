@@ -11,7 +11,7 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
 toml_edit = "0.25"
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
 
