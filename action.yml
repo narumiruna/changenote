@@ -1,0 +1,37 @@
+name: Changenote Release PR
+description: Create or update a Release PR from pending changenote notes (Linux).
+inputs:
+  github-token:
+    description: Token with contents and pull requests write permissions.
+    default: ${{ github.token }}
+  base-branch:
+    description: Base branch. Defaults to the repository default branch.
+    default: ''
+  commit-message:
+    description: Release commit message.
+    default: 'chore(release): version packages'
+  pr-title:
+    description: Release PR title.
+    default: 'chore(release): version packages'
+outputs:
+  has-notes:
+    description: Whether there are pending notes.
+    value: ${{ steps.version.outputs.has-notes }}
+  pr-number:
+    description: Managed PR number, or an empty string.
+    value: ${{ steps.version.outputs.pr-number }}
+  pr-operation:
+    description: created, updated, closed, or none.
+    value: ${{ steps.version.outputs.pr-operation }}
+runs:
+  using: composite
+  steps:
+    - id: version
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_BASE_BRANCH: ${{ inputs.base-branch }}
+        INPUT_COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        INPUT_PR_TITLE: ${{ inputs.pr-title }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/scripts/action/version.sh"

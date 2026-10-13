@@ -1,0 +1,29 @@
+name: Changenote Publish
+description: Publish annotated tags and GitHub Releases from the latest validated batch (Linux).
+inputs:
+  github-token:
+    description: Token with contents write permission.
+    default: ${{ github.token }}
+  base-branch:
+    description: Base branch. Defaults to the repository default branch.
+    default: ''
+outputs:
+  release-commit:
+    description: Validated release commit, or an empty string.
+    value: ${{ steps.publish.outputs.release-commit }}
+  published:
+    description: Whether this run created a remote tag or GitHub Release.
+    value: ${{ steps.publish.outputs.published }}
+  published-packages:
+    description: JSON array of name and version objects changed by this run.
+    value: ${{ steps.publish.outputs.published-packages }}
+runs:
+  using: composite
+  steps:
+    - id: publish
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_BASE_BRANCH: ${{ inputs.base-branch }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/../scripts/action/publish.sh"

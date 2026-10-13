@@ -1,0 +1,58 @@
+name: Release PR
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: changenote-release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      pull-requests: write
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test and build
+        run: |
+          cargo test --locked
+          cargo build --locked --release
+          echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
+      - uses: ./
+        with:
+          base-branch: main
+
+  publish:
+    needs: release
+    if: ${{ always() && github.ref == 'refs/heads/main' && needs.release.result != 'cancelled' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test and build
+        run: |
+          cargo test --locked
+          cargo build --locked --release
+          echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
+      - uses: ./publish
+        with:
+          base-branch: main
