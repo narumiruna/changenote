@@ -255,6 +255,43 @@ class Actions(unittest.TestCase):
         )
         self.assertEqual(body.count("### Major Changes"), 1)
 
+    def test_custom_sections_match_pr_changelog_and_publication(self):
+        config_path = self.repo / ".changenote/config.json"
+        config = json.loads(config_path.read_text())
+        config["changelog"] = {"sections": [
+            {"title": "Features", "types": ["feat"]},
+            {"title": "Bug Fixes", "types": ["fix"]},
+            {"title": "Maintenance", "types": ["docs", "refactor"]},
+            {"title": "Performance", "types": ["perf"]},
+        ]}
+        config_path.write_text(json.dumps(config))
+        self.cli("add", "a", "--patch", "pkg", "--type", "feat", "-m", "Feature")
+        self.cli("add", "b", "--minor", "pkg", "--type", "fix", "-m",
+                 "Fix\n\n```md\n## 9.0.0\n```\n\n[PR](https://example.com/1)")
+        self.cli("add", "c", "--patch", "pkg", "--type", "docs", "-m", "Docs")
+        self.cli("add", "d", "--patch", "pkg", "--type", "refactor", "-m", "Refactor")
+        self.cli("add", "e", "--patch", "pkg", "-m", "Untyped")
+        self.commit("typed notes")
+        self.git("push", "origin", "main")
+        self.action()
+        body = self.state()["pulls"][0]["body"]
+        self.assertIn("### Features\n\n- Feature", body)
+        self.assertIn("### Maintenance\n\n- Docs\n- Refactor", body)
+        self.assertIn("### Other Changes\n\n- Untyped", body)
+        self.assertNotIn("### Performance", body)
+        self.assertNotIn("### Minor Changes", body)
+        self.assertLess(body.index("### Features"), body.index("### Bug Fixes"))
+        self.git("fetch", "origin", BRANCH)
+        self.git("merge", "--squash", "FETCH_HEAD")
+        self.commit("release")
+        self.git("push", "origin", "main")
+        expected = self.cli("release-notes", "--package", "pkg", "--version", "1.1.0") + "\n"
+        self.assertIn("### Maintenance\n\n- Docs\n\n- Refactor", expected)
+        self.action("publish")
+        self.assertEqual(self.state()["releases"][0]["body"], expected)
+        self.action("publish")
+        self.assertEqual(len(self.state()["releases"]), 1)
+
     def test_pr_with_installation_token_without_permissions(self):
         self.set_state(omit_permissions=True)
         self.note()

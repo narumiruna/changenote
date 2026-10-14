@@ -37,7 +37,7 @@ if [[ $(jq length "$temp/plan.json") == 0 ]]; then
   exit 0
 fi
 output has-notes true
-"$cli" status --include-note-bumps > "$temp/details.json"
+"$cli" status --include-note-sections > "$temp/details.json"
 "$cli" version > "$temp/applied.json"
 jq -e --slurpfile expected "$temp/plan.json" '. == $expected[0]' "$temp/applied.json" >/dev/null || fail 'Version output differs from status.'
 stage_release "$temp/plan.json"
@@ -53,15 +53,9 @@ listing=$(remote_git ls-remote --heads "$remote_url" "refs/heads/$branch")
 jq -r --arg marker "$marker" --arg base "$base" '
   def changes:
     if (.notes | length) == 0 then "Released with its fixed version group; no direct changes." else
-    . as $release |
-    ["major", "minor", "patch"] | map(
-      . as $bump |
-      [range(0; $release.notes | length) |
-        select($release.note_bumps[.] == $bump) |
-        "- " + ($release.notes[.] | split("\n") | join("\n  "))
-      ] |
-      select(length > 0) |
-      "### " + ($bump | ascii_upcase[0:1]) + $bump[1:] + " Changes\n\n" + join("\n")
+    .note_sections | map(
+      "### " + .title + "\n\n" +
+      (.notes | map("- " + (split("\n") | join("\n  "))) | join("\n"))
     ) | join("\n\n") end;
   $marker + "\n\nThis PR was opened by the [changenote release](https://github.com/narumiruna/changenote) GitHub Action. Merge this PR when you are ready to release these versions. Use the publication Action to publish tags and GitHub Releases; registry publication requires a separate workflow. If you are not ready to release, leave this PR open. New change notes on `" + $base + "` update this PR.\n\n# Releases\n\n" +
   (map("## " + .package + "@" + .version + "\n\n" + changes) | join("\n\n"))

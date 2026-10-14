@@ -53,6 +53,13 @@ Run `status` to check the configuration, paths, files, and versions; editor vali
 uvx changenote add fix-parser --package pkg-a --bump patch --message "Fix parsing of quoted package names"
 ```
 
+If `.changenote/config.json` defines `changelog.sections`, select a configured type and pass `--type <type>` to `add`.
+Select the SemVer bump separately; a type does not determine release compatibility.
+For directly edited notes, store the type as `$type: <type>` in frontmatter, alongside package bumps.
+A note has one type for all its packages; untyped notes remain valid.
+Use `status --include-note-types --include-note-sections` when you need to verify types and planned grouping.
+Do not change section configuration unless configuration changes are in scope.
+
 Repeat `--package` to give several packages the same bump.
 For different bumps, write or edit one note with this format.
 Replace the example package names with names from the target configuration:

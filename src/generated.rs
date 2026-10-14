@@ -7,7 +7,17 @@ use std::{
 
 /// Create a note with an OS-random identifier; validation precedes allocation.
 pub fn add_generated(root: &Path, packages: Vec<(String, Bump)>, message: &str) -> Result<PathBuf> {
-    let content = note_content(root, packages, message)?;
+    add_generated_with_type(root, packages, message, None)
+}
+
+/// Create a note with an OS-random identifier and optional classification.
+pub fn add_generated_with_type(
+    root: &Path,
+    packages: Vec<(String, Bump)>,
+    message: &str,
+    kind: Option<&str>,
+) -> Result<PathBuf> {
+    let content = note_content(root, packages, message, kind)?;
     allocate(root, &content, || {
         let mut bytes = [0u8; 16];
         getrandom::fill(&mut bytes)

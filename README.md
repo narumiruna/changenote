@@ -47,7 +47,7 @@ git push origin refs/tags/v0.1.0
 
 `version` takes the highest requested bump for each package and applies it once. Multiple patch notes cause one patch bump, not multiple bumps. Major, minor, and patch follow stable SemVer rules, including versions below 1.0.0.
 
-The command updates each configured version file, adds entries to `CHANGELOG.md`, saves the latest release batch to `.changenote/releases.json`, and removes consumed notes. Saved batches contain only `package`, `old_version`, `version`, `bump`, and `tag`; summaries remain in the package changelogs, not in saved `notes` fields. Pending `status` and `version` command output still include notes. New entries follow the existing title and introduction, before the first ATX SemVer version heading outside fenced or indented code. A file without a version heading is treated as an introduction. Prior content is not reformatted. Notes are grouped by their own bump under `Major Changes`, `Minor Changes`, and `Patch Changes`, in that order; empty groups are omitted. Multiline Markdown remains inside each note's list item. A run without pending notes does not change files or clear the saved batch.
+The command updates each configured version file, adds entries to `CHANGELOG.md`, saves the latest release batch to `.changenote/releases.json`, and removes consumed notes. Saved batches contain only `package`, `old_version`, `version`, `bump`, and `tag`; summaries remain in the package changelogs, not in saved `notes` fields. Pending `status` and `version` command output still include notes. New entries follow the existing title and introduction, before the first ATX SemVer version heading outside fenced or indented code. A file without a version heading is treated as an introduction. Prior content is not reformatted. By default, notes are grouped by their own bump under `Major Changes`, `Minor Changes`, and `Patch Changes`, in that order; empty groups are omitted. Multiline Markdown remains inside each note's list item. A run without pending notes does not change files or clear the saved batch.
 
 ## Monorepo
 
@@ -137,6 +137,85 @@ changenote add shared-api --minor pkg-a --patch pkg-b -m "Update the shared API"
 ```
 
 Repeat `--major`, `--minor`, or `--patch` for each package. Do not combine these options with `--package` or `--bump`. Conflicting bumps for one package and unknown packages fail before a file is created. Repeated identical assignments are deduplicated. The original CLI syntax and Rust `add()` API remain supported; Rust callers can use `add_with_bumps()` for mixed bumps.
+
+## Note types and changelog sections
+
+Classify a note independently of its SemVer bump:
+
+```sh
+changenote add fix-parser --package pkg-a --bump patch --type fix -m "Fix parsing of quoted package names."
+```
+
+`--type` works with named notes, automatic names, and mixed package bumps.
+The note stores one type for all its packages:
+
+```markdown
+---
+pkg-a: patch
+$type: fix
+---
+
+Fix parsing of quoted package names.
+```
+
+`$type` is metadata, not a package name.
+A package named `type` remains supported.
+Types use ASCII letters, digits, hyphens, and underscores and are case-sensitive.
+No types are built in, and types do not select bumps or decide whether a change needs a release note.
+Without section configuration, typed and untyped notes retain the existing bump groups.
+
+Add optional `changelog.sections` to `.changenote/config.json` to group notes by type:
+
+```json
+{
+  "packages": {
+    "pkg-a": { "path": ".", "version_file": "VERSION" }
+  },
+  "changelog": {
+    "sections": [
+      { "title": "Features", "types": ["feat"] },
+      { "title": "Bug Fixes", "types": ["fix"] },
+      { "title": "Performance", "types": ["perf"] },
+      {
+        "title": "Maintenance",
+        "types": ["chore", "docs", "style", "refactor", "test"]
+      }
+    ]
+  }
+}
+```
+
+Sections follow configuration order, and empty sections are omitted.
+Notes within a section follow filename order.
+Several types can share one section.
+Untyped notes appear last under `Other Changes`, so existing pending notes remain usable.
+When section configuration is present, unknown note types are rejected by `add`, `status`, `check`, and `version`.
+Sections and their type lists must be nonempty.
+Titles must be nonempty, trimmed, unique, and contain no control characters; `Other Changes` is reserved.
+A title cannot start with a SemVer version because that would be read as a release heading.
+Each type can occur only once across all sections.
+Breaking changes still need migration instructions and the bump required by the repository's compatibility policy.
+Fixed-group members without direct notes retain their existing explanatory message.
+
+Inspect the type for each direct note or the planned sections without changing files:
+
+```sh
+changenote status --include-note-types --include-note-sections
+```
+
+`note_types` aligns with `notes` and uses `null` for untyped notes.
+`note_sections` contains ordered objects with `title` and `notes`; members without direct notes have empty arrays.
+These options work independently of note bump and path options.
+Default status JSON and saved release batches do not change.
+The Rust APIs `add_with_type()` and `add_generated_with_type()` accept an optional type; existing add APIs remain supported.
+`status_with_note_sections()` returns the direct note types and planned sections alongside the existing detailed release.
+`load_config()` validates section configuration but returns only package settings; do not use its return value to round-trip a config with sections.
+
+Upgrade the CLI and Actions together before using typed notes or section configuration.
+Older CLIs reject the new metadata and configuration.
+Release PRs use the same planned sections as changelogs; GitHub Releases use the generated changelog entry.
+To remove this feature before versioning, remove section configuration and `$type` metadata from pending notes.
+Do not edit committed release batches.
 
 ## Note sources and automatic names
 
@@ -276,7 +355,7 @@ jobs:
 
 The Action fetches the current base branch, applies pending notes in a temporary worktree, and creates or updates one PR from `narumi/chore/changenote-release-<base-branch>`. Reserve that branch for automation. New notes update the same PR; unchanged generated trees do not create new commits or pushes. If notes are removed, the Action closes only its managed PR and leaves the branch in place. A manually closed PR is replaced when notes remain.
 
-Release PR descriptions use a `Releases` heading and `package@version` headings. Notes are grouped by their own bump under `Major Changes`, `Minor Changes`, and `Patch Changes`; empty groups are omitted. Multiline notes remain within their list items. The Action requires a CLI that supports `status --include-note-bumps`. This option adds a `note_bumps` array aligned with `notes`; default release-plan output and saved batches are unchanged.
+Release PR descriptions use a `Releases` heading and `package@version` headings. By default, notes are grouped by their own bump under `Major Changes`, `Minor Changes`, and `Patch Changes`; empty groups are omitted. Multiline notes remain within their list items. The Action requires a CLI that supports `status --include-note-sections`. This option adds ordered `note_sections` objects with `title` and `notes`; default release-plan output and saved batches are unchanged. Custom section configuration replaces the bump groups for both Release PRs and changelogs.
 
 Existing branches require a marked PR in their history. Lease-based pushes stop if another actor moves the branch. The Action stages only release outputs and consumed notes. Notes and titles are data, not shell commands. PR bodies over 60,000 bytes omit release details.
 
