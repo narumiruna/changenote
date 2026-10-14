@@ -77,6 +77,22 @@ Confirm that its JSON plan contains the intended packages, bumps, versions, and 
 Each package receives its highest requested bump once, regardless of the number of notes.
 For a note-only task, stop after validation; do not consume the notes.
 
+## Changelog and Release Notes Format
+
+Read [the changelog entry template](assets/changelog-entry-template.md) when reviewing or preparing release content.
+Replace angle-bracket placeholders with the actual stable version and user-facing summaries; omit empty groups.
+Each package has its own `CHANGELOG.md` in its configured directory.
+Group notes by each note's bump for that package, not by the package's overall release bump.
+Include migration steps for breaking changes and keep multiline Markdown inside each note's list item.
+Use pending change notes as input to `version`; do not copy the template into `.changenote/` as a pending note or create a separate `RELEASE_NOTES.md`.
+
+GitHub Release publication reads the exact version entry from each package's changelog in the validated release commit, without its version heading.
+Saved `.changenote/releases.json` contains only package, old version, version, bump, and tag metadata; pending status still includes notes.
+Publication rejects manual edits to the generated release tree, so the template is a format reference, not permission to edit committed release outputs.
+Missing, empty, or duplicate version entries stop publication, and retries do not replace existing GitHub Release text.
+Upgrade the CLI and Actions together; old saved batches with `notes` are unsupported and need completion with matching old tooling or manual handling before upgrade.
+Do not convert old batches by editing committed data.
+
 ## Apply Versions or Create Tags
 
 Run `version`, `tag`, or a GitHub Release workflow only when the user explicitly requests that specific release action.
@@ -91,8 +107,8 @@ For an authorized version operation:
 
 `version` updates version files, prepends changelog entries, saves the latest release batch, and removes consumed notes.
 With no pending notes, it changes nothing and preserves the saved batch.
-It does not synchronize manifests, lockfiles, or internal dependencies.
-If publication requires those updates, follow the package's documented release process; do not invent a synchronization step.
+It updates configured version files and synchronizes supported existing lockfiles; it does not update internal dependency ranges.
+Follow the repository's documented package-manager and offline-cache requirements.
 If writes fail, stop and inspect partial changes before retrying; do not automatically discard unrelated work.
 
 For an authorized tag operation, require a clean working tree and committed release data, then run `uvx changenote tag`.

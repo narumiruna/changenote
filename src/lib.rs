@@ -65,6 +65,43 @@ pub struct Release {
     pub note_bumps: Vec<Bump>,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SavedRelease {
+    package: String,
+    old_version: Version,
+    version: Version,
+    bump: Bump,
+    tag: String,
+}
+
+impl From<&Release> for SavedRelease {
+    fn from(release: &Release) -> Self {
+        Self {
+            package: release.package.clone(),
+            old_version: release.old_version.clone(),
+            version: release.version.clone(),
+            bump: release.bump,
+            tag: release.tag.clone(),
+        }
+    }
+}
+
+/// Read one package's exact changelog version body without changing files.
+pub fn release_notes(root: &Path, package: &str, version: &Version) -> Result<String> {
+    let config = load_config(root)?;
+    let pkg = config
+        .packages
+        .get(package)
+        .context("unknown release package")?;
+    let path = checked_path(root, &pkg.path.join("CHANGELOG.md"))?;
+    ensure!(
+        !fs::symlink_metadata(&path)?.file_type().is_symlink(),
+        "changelog cannot be a symlink"
+    );
+    changelog::extract(&fs::read_to_string(path)?, version)
+}
+
 fn safe_name(name: &str) -> Result<()> {
     ensure!(
         !name.is_empty()
@@ -431,7 +468,12 @@ pub fn version_with_output(
     }
     writes.push((
         checked_path(root, Path::new(".changenote/releases.json"))?,
-        format!("{}\n", serde_json::to_string_pretty(&releases)?),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(
+                &releases.iter().map(SavedRelease::from).collect::<Vec<_>>()
+            )?
+        ),
     ));
     lockfile::apply(&manifests, &locks)?;
     for (path, content) in writes {
@@ -459,7 +501,7 @@ pub fn tag(root: &Path) -> Result<Vec<String>> {
         git(root, &["status", "--porcelain"])?.is_empty(),
         "commit all changes before tagging"
     );
-    let releases: Vec<Release> = serde_json::from_str(&fs::read_to_string(checked_path(
+    let releases: Vec<SavedRelease> = serde_json::from_str(&fs::read_to_string(checked_path(
         root,
         Path::new(".changenote/releases.json"),
     )?)?)?;

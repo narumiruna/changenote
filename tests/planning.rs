@@ -103,9 +103,11 @@ fn public_layout_signatures_and_serialization_remain_compatible() {
         format!("{expected}\n")
     );
     version(dir.path()).unwrap();
+    let mut metadata: serde_json::Value = serde_json::from_str(&expected).unwrap();
+    metadata[0].as_object_mut().unwrap().remove("notes");
     assert_eq!(
         fs::read_to_string(dir.path().join(".changenote/releases.json")).unwrap(),
-        format!("{expected}\n")
+        format!("{}\n", serde_json::to_string_pretty(&metadata).unwrap())
     );
     let single = tempfile::tempdir().unwrap();
     changenote::init(single.path(), "a", Version::new(1, 0, 0)).unwrap();

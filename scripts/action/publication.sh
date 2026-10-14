@@ -27,7 +27,7 @@ verify_publication_batch() {
   # Reconstruct the version commit from its parent's notes. This validates all fields,
   # bumps, deleted notes, versions, changelogs, paths, and the batch without a new schema.
   "$cli" status > "$temp/expected.json"
-  jq -e --slurpfile expected "$temp/expected.json" '. == $expected[0]' "$temp/batch.json" >/dev/null || fail 'Batch does not match the parent release plan.'
+  jq -e --slurpfile expected "$temp/expected.json" '. == ($expected[0] | map(del(.notes)))' "$temp/batch.json" >/dev/null || fail 'Batch does not match the parent release plan.'
   local generated=''
   if "$cli" version > "$temp/applied.json"; then
     stage_release "$temp/batch.json"
@@ -38,15 +38,18 @@ verify_publication_batch() {
     git reset --hard "$parent"
     "$cli" version --no-lockfiles > "$temp/applied.json"
     stage_release "$temp/batch.json"
-    if [[ $(git write-tree) != "$(git rev-parse "$release^{tree}")" ]]; then
-      # The oldest CLI used flat changelogs and two-space JSON.
-      git reset --hard "$parent"
-      "$cli" version --legacy-output > "$temp/applied.json"
-      stage_release "$temp/batch.json"
-      [[ $(git write-tree) == "$(git rev-parse "$release^{tree}")" ]] || fail 'Release commit contains changes beyond the generated release tree (current or legacy output).'
-    fi
+    [[ $(git write-tree) == "$(git rev-parse "$release^{tree}")" ]] || fail 'Release commit contains changes beyond the generated release tree.'
   fi
   git reset --hard "$release"
+  # Validate every body before any remote writes, including later batch members.
+  local item package version index=0
+  mkdir -p "$temp/notes"
+  while IFS= read -r item; do
+    index=$((index + 1))
+    package=$(jq -r '.package' <<< "$item")
+    version=$(jq -r '.version' <<< "$item")
+    "$cli" release-notes --package="$package" --version "$version" > "$temp/notes/$index.md"
+  done < <(jq -c '.[]' "$temp/batch.json")
 }
 
 inspect_publication() {

@@ -71,6 +71,13 @@ enum Commands {
         #[arg(long, hide = true)]
         no_lockfiles: bool,
     },
+    /// Print one package's exact changelog version body without changing files.
+    ReleaseNotes {
+        #[arg(long)]
+        package: String,
+        #[arg(long)]
+        version: Version,
+    },
     /// Create local annotated tags for the committed release plan.
     Tag,
 }
@@ -145,6 +152,12 @@ fn run() -> Result<()> {
                 !legacy_output && !no_lockfiles
             )?)?
         ),
+        Commands::ReleaseNotes { package, version } => {
+            print!(
+                "{}",
+                changenote::release_notes(&cli.root, &package, &version)?
+            );
+        }
         Commands::Tag => {
             for tag in changenote::tag(&cli.root)? {
                 println!("{tag}");

@@ -262,6 +262,27 @@ fn rejects_parent_paths_shared_files_and_prereleases() {
 }
 
 #[test]
+fn tag_rejects_old_note_bearing_batches_without_creating_tags() {
+    let dir = project();
+    git(dir.path(), &["init", "--initial-branch=main"]);
+    note(dir.path(), "hello", Bump::Minor);
+    let releases = version(dir.path()).unwrap();
+    fs::write(
+        dir.path().join(".changenote/releases.json"),
+        serde_json::to_string_pretty(&releases).unwrap(),
+    )
+    .unwrap();
+    commit(dir.path());
+    assert!(
+        tag(dir.path())
+            .unwrap_err()
+            .to_string()
+            .contains("unknown field `notes`")
+    );
+    assert!(git(dir.path(), &["tag", "--list"]).is_empty());
+}
+
+#[test]
 fn git_tags_require_commit_and_are_idempotent_at_same_commit() {
     let dir = project();
     git(dir.path(), &["init", "--initial-branch=main"]);

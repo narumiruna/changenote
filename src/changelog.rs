@@ -1,4 +1,5 @@
 use crate::{Bump, Release};
+use anyhow::{Result, ensure};
 use semver::Version;
 
 pub(crate) fn render(release: &Release, old: &str, legacy: bool) -> String {
@@ -50,15 +51,55 @@ fn items<'a>(notes: impl Iterator<Item = &'a str>) -> String {
         .join("\n\n")
 }
 
-// Only ATX SemVer headings outside fenced or indented code start a release.
+// Only ATX SemVer headings outside code and generated note items start a release.
 fn first_version_heading(text: &str) -> Option<usize> {
+    version_headings(text).first().map(|(start, _, _)| *start)
+}
+
+pub(crate) fn extract(text: &str, version: &Version) -> Result<String> {
+    let headings = version_headings(text);
+    let matches: Vec<_> = headings
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, _, v))| v == version)
+        .collect();
+    ensure!(
+        matches.len() == 1,
+        "expected exactly one changelog entry for {version}, found {}",
+        matches.len()
+    );
+    let (index, (_, start, _)) = matches[0];
+    let end = headings
+        .get(index + 1)
+        .map_or(text.len(), |(start, _, _)| *start);
+    let body = text[*start..end].trim_matches(['\r', '\n']);
+    ensure!(
+        !body.trim().is_empty(),
+        "empty changelog entry for {version}"
+    );
+    Ok(format!("{body}\n"))
+}
+
+fn version_headings(text: &str) -> Vec<(usize, usize, Version)> {
+    let mut headings = Vec::new();
     let mut offset = 0;
     let mut fence: Option<(u8, usize)> = None;
+    let mut in_note = false;
     for line in text.split_inclusive('\n') {
         let text = line.trim_end_matches(['\r', '\n']);
         let indent = text.bytes().take_while(|b| *b == b' ').count();
+        let note_start = fence.is_none() && indent == 0 && text.starts_with("- ");
+        // Generated note continuations, including blank lines, have two spaces.
+        // An unindented separator ends the item, even before an indented entry.
+        if fence.is_none() && indent == 0 {
+            in_note = note_start;
+        }
         if indent <= 3 {
-            let text = &text[indent..];
+            let text = if note_start {
+                &text[2..]
+            } else {
+                &text[indent..]
+            };
             let marker = text.as_bytes().first().copied();
             if matches!(marker, Some(b'`' | b'~')) {
                 let marker = marker.unwrap();
@@ -70,7 +111,7 @@ fn first_version_heading(text: &str) -> Option<usize> {
                 } else if count >= 3 && (marker != b'`' || !text[count..].contains('`')) {
                     fence = Some((marker, count));
                 }
-            } else if fence.is_none() {
+            } else if fence.is_none() && !in_note {
                 let count = text.bytes().take_while(|b| *b == b'#').count();
                 if (1..=6).contains(&count)
                     && text
@@ -79,15 +120,15 @@ fn first_version_heading(text: &str) -> Option<usize> {
                         .is_some_and(u8::is_ascii_whitespace)
                 {
                     let version = text[count..].split_whitespace().next().unwrap_or("");
-                    if Version::parse(version).is_ok() {
-                        return Some(offset);
+                    if let Ok(version) = Version::parse(version) {
+                        headings.push((offset, offset + line.len(), version));
                     }
                 }
             }
         }
         offset += line.len();
     }
-    None
+    headings
 }
 
 #[cfg(test)]
@@ -112,6 +153,7 @@ mod tests {
         for (old, prefix, suffix) in [
             ("", "", ""),
             ("## 1.0.0\n\nOld\n", "", "## 1.0.0\n\nOld\n"),
+            ("  ## 1.0.0\nOld\n", "", "  ## 1.0.0\nOld\n"),
             (
                 "# Changelog\n\nIntro\n\n## 1.0.0\nOld\n",
                 "# Changelog\n\nIntro\n\n",
