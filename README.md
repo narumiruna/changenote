@@ -316,15 +316,21 @@ The preview is advisory, not a reservation. Remote state can change afterward; r
 
 ### Publication workflow
 
-The automatic workflow above runs publication after PR management. Publication can recover an earlier batch even if PR management fails. Its job needs only `contents: write`.
+The generic consumer workflow above runs publication after PR management on every base-branch push. Publication can recover an earlier batch even if PR management fails. Its job needs only `contents: write`. The repository's own workflow adds the automatic publication gate described below.
 
-To retry a partial publication failure, run **Release** manually on `main`. This runs both PR management and publication again. They use one workflow concurrency group, so no separate retry workflow is needed. Keep required publication steps in this workflow: tags pushed with `GITHUB_TOKEN` do not trigger other push workflows.
+In the generic consumer workflow, manual dispatch runs both PR management and publication again. In this repository, run **Release** manually on `main` with `operation=retry-publication` to retry a partial failure. The default `operation=manage-pr` only manages the Release PR. All operations use one workflow concurrency group. Keep required publication steps in this workflow: tags pushed with `GITHUB_TOKEN` do not trigger other push workflows.
 
 Publication selects the latest first-parent commit that changes `.changenote/releases.json`. It reconstructs that commit from the parent's notes and compares the complete generated tree before publication. The publication Action first checks current output, then the previous output without lockfile synchronization, then the exact legacy output (flat changelogs prepended before titles and two-space JSON with a final newline). Mixed output profiles and arbitrary edits are rejected. Legacy replay rejects active fixed-group plans because older writers did not support them. The hidden `version --no-lockfiles` and `version --legacy-output` options are reserved for this reconstruction in a temporary Action worktree; do not use it for new releases. Upgrade CLI and Action pins together. Older Actions do not support this fallback. Standard merge, squash, and rebase merges are supported. A later unrelated commit or new pending notes do not change the release target.
 
 Existing remote tags must point to the selected commit. Missing tags and GitHub Releases are created; existing release text is not replaced. Draft releases, missing tags for existing releases, malformed batches, batch deletion, manually edited release trees, and tag conflicts stop publication. A batch in a root commit cannot be verified. No batch is a no-op.
 
-The repository's `.github/workflows/release.yml` runs PR management and GitHub publication on pushes to `main` or manual dispatch. It builds the CLI instead of installing it and does not push version commits directly to `main`. It then builds Python distributions from the validated release commit and uploads them to PyPI with `uv publish` and the `PYPI_TOKEN` GitHub Actions secret. See `python/README.md` for supported platforms and required publisher settings. These repository-specific jobs are not part of the reusable Actions.
+The repository's `.github/workflows/release.yml` only manages the Release PR on ordinary pushes to `main`, even when an older release batch exists. Automatic publication requires a new batch-changing first-parent commit in the push range and exactly one associated merged managed PR. The PR must use the reserved head branch, the repository's `main` base, and the managed body marker. Its merge commit SHA must match the batch commit. PR titles and commit messages do not authorize publication. Force pushes, missing history, invalid batches, ambiguous associations, and API errors stop routing without authorizing publication.
+
+Before publication, the workflow previews and validates the latest remote batch. Automatic runs require that batch to match the routed commit; publication checks the selection again after its own fetch and before any remote writes. If a newer release has replaced it, the run fails and requires an explicit retry. Multiple releases in one push still select only the latest batch. An unrelated later commit does not change the selected batch.
+
+Manual `operation=retry-publication` skips PR management and retries the latest validated batch. Wheels run after successful publication with a non-empty validated commit, even if `published=false` because the GitHub tag and Release already exist. A missing batch is a no-op. Cancellation or failed publication prevents wheel builds and PyPI uploads. Retry builds can differ from files already on PyPI: `uv publish --check-url` skips matching files but rejects different contents for the same filename. Inspect registry state and resolve conflicts separately; never replace published files automatically.
+
+The workflow builds the CLI instead of installing it and does not push version commits directly to `main`. It builds Python distributions from the validated release commit and uploads them to PyPI with `uv publish` and the `PYPI_TOKEN` GitHub Actions secret. See `python/README.md` for supported platforms and required publisher settings. This routing policy is repository-specific; the reusable Actions keep their historical-batch recovery behavior.
 
 ### Inputs and outputs
 
@@ -343,7 +349,7 @@ The publication Action outputs `release-commit` (commit SHA or empty string), `p
 
 Disable the Release workflow to stop automation. Unmerged Release PR changes do not affect the base branch.
 
-After a partial publication failure, rerun `Release`. The Action uses the saved release commit even after unrelated commits. Do not merge another Release PR until the current batch is fully published: discovery covers only the latest batch. History rewrites or manual batch edits require manual inspection. Never move tags automatically.
+After a partial publication failure in this repository, run `Release` on `main` with `operation=retry-publication`. The Action uses the saved release commit even after unrelated commits. Do not merge another Release PR until the current batch is fully published: discovery covers only the latest batch. History rewrites or manual batch edits require manual inspection. Never move tags automatically.
 
 If PR creation fails after pushing a new branch, the Action checks for a successful remote PR creation before it removes that branch with a lease. If the API or cleanup also fails, inspect the marked PR and branch manually before retrying; an unowned branch is deliberately rejected. Do not delete a branch without checking its commit and PR history.
 

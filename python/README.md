@@ -71,6 +71,8 @@ Before enabling uploads:
 2. Create a PyPI API token scoped to the existing `changenote` project. Store it as a GitHub Actions secret named `PYPI_TOKEN` in the `pypi` environment or repository.
 3. Confirm that the next release version is unused on PyPI. The upload step passes the secret through `UV_PUBLISH_TOKEN` and disables Trusted Publishing. The upload job has only `contents: read` permission.
 
-After a partial failure, rerun **Release** on `main`. Wheel builds run even when the GitHub tag and Release already exist. `uv publish --check-url https://pypi.org/simple/` skips matching files that were already uploaded and rejects conflicting contents. A rebuilt artifact can differ from an earlier upload; inspect conflicts instead of replacing published files. Do not merge another Release PR until the current batch is fully published. The workflow discovers only the latest batch.
+Ordinary pushes to `main` only manage the Release PR. A confirmed merged managed Release PR starts automatic publication. Manual **Release** dispatch defaults to `operation=manage-pr` and does not publish.
+
+After a partial failure, run **Release** on `main` with `operation=retry-publication`. This skips PR management and retries the latest validated batch. Wheel builds run even when the GitHub tag and Release already exist. `uv publish --check-url https://pypi.org/simple/` skips matching files that were already uploaded and rejects conflicting contents. A rebuilt artifact can differ from an earlier upload; inspect conflicts instead of replacing published files. Do not merge another Release PR until the current batch is fully published. The workflow discovers only the latest batch.
 
 This package does not provide Python bindings to the Rust library.

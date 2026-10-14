@@ -7,6 +7,10 @@ output published false
 output published-packages '[]'
 output release-commit ''
 verify_publication_batch
+# The repository workflow passes the preview selection. Composite callers omit it.
+if [[ $# -gt 0 && $release != "$1" ]]; then
+  fail 'Release batch changed after preview; use an explicit retry.'
+fi
 [[ -n $release ]] || exit 0
 output release-commit "$release"
 # Inspect all remote objects before creating anything. API failure is not absence.
