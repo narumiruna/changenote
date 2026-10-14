@@ -129,6 +129,71 @@ class Actions(unittest.TestCase):
         self.commit("source change")
         self.git("push", "origin", "main")
 
+    def npm_project(self):
+        (self.repo / "package.json").write_text('{"name":"pkg","version":"1.0.0"}\n')
+        (self.repo / "package-lock.json").write_text('{"version":"1.0.0"}\n')
+        (self.repo / ".changenote/config.json").write_text(json.dumps({
+            "packages": {"pkg": {"path": ".", "version_file": "package.json"}}
+        }))
+        (self.bin / "npm").write_text(
+            "#!/bin/sh\n"
+            "exec uv run --no-project python -c 'import json; from pathlib import Path; "
+            "v=json.loads(Path(\"package.json\").read_text())[\"version\"]; "
+            "Path(\"package-lock.json\").write_text(json.dumps({\"version\":v})+\"\\n\")'\n"
+        )
+        (self.bin / "npm").chmod(0o755)
+        self.commit("npm fixture")
+        self.git("push", "origin", "main")
+
+    def test_release_stages_and_replays_lockfile(self):
+        self.npm_project()
+        sha = self.release()
+        lock = json.loads(self.git("show", f"{sha}:package-lock.json"))
+        self.assertEqual(lock["version"], "1.0.1")
+        self.later_commit()
+        self.action("publish")
+        self.assertEqual(self.state()["releases"][0]["tag_name"], "v1.0.1")
+
+    def test_release_stages_ancestor_workspace_lockfile(self):
+        self.npm_project()
+        (self.repo / "child").mkdir()
+        (self.repo / "child/package.json").write_text('{"name":"child","version":"1.0.0"}\n')
+        (self.repo / ".changenote/config.json").write_text(json.dumps({
+            "packages": {"pkg": {"path": "child", "version_file": "package.json"}}
+        }))
+        (self.bin / "npm").write_text(
+            "#!/bin/sh\n"
+            "exec uv run --no-project python -c 'import json; from pathlib import Path; "
+            "v=json.loads(Path(\"child/package.json\").read_text())[\"version\"]; "
+            "Path(\"package-lock.json\").write_text(json.dumps({\"version\":v})+\"\\n\")'\n"
+        )
+        self.commit("workspace fixture")
+        self.git("push", "origin", "main")
+        sha = self.release()
+        self.assertEqual(json.loads(self.git("show", f"{sha}:package-lock.json"))["version"], "1.0.1")
+        self.action("publish")
+
+    def test_pre_lockfile_release_remains_verifiable(self):
+        self.npm_project()
+        self.note()
+        self.cli("version", "--no-lockfiles")
+        sha = self.commit("old release")
+        self.git("push", "origin", "main")
+        self.action("publish")
+        self.assertEqual(json.loads(self.git("show", f"{sha}:package-lock.json"))["version"], "1.0.0")
+
+    def test_tampered_release_lockfile_is_rejected(self):
+        self.npm_project()
+        self.release()
+        (self.repo / "package-lock.json").write_text('{"version":"9.9.9"}\n')
+        self.git("add", "--", "package-lock.json")
+        self.git("commit", "--amend", "--no-edit")
+        self.git("push", "--force", "origin", "main")
+        result, _ = self.action("publish", ok=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("beyond the generated release tree", result.stderr)
+        self.assertEqual(self.state()["releases"], [])
+
     def test_pr_lifecycle_and_outputs(self):
         _, outputs = self.action()
         self.assertEqual(

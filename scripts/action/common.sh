@@ -61,8 +61,26 @@ checkout_work() {
 }
 
 stage_release() {
-  local plan=$1 path
+  local plan=$1 path directory lock
   local paths=(.changenote/releases.json)
+  while IFS= read -r -d '' path; do
+    case ${path##*/} in
+      Cargo.toml) lock=Cargo.lock ;;
+      pyproject.toml) lock=uv.lock ;;
+      package.json) lock=package-lock.json ;;
+      *) continue ;;
+    esac
+    directory=$(dirname -- "$path")
+    while :; do
+      if [[ -e $directory/$lock || -L $directory/$lock ]]; then
+        paths+=("$directory/$lock")
+        break
+      fi
+      [[ $directory != . ]] || break
+      directory=$(dirname -- "$directory")
+    done
+  done < <(jq -j --slurpfile config .changenote/config.json \
+    '.[] | $config[0].packages[.package] | .path + "/" + .version_file + "\u0000"' "$plan")
   while IFS= read -r -d '' path; do
     paths+=("$path")
   done < <(jq -j --slurpfile config .changenote/config.json \

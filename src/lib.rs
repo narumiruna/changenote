@@ -6,6 +6,7 @@ mod check;
 pub use planning::{DetailedRelease, FixedGroup, status_with_note_paths};
 mod json_value;
 pub use check::{CheckReport, check};
+mod lockfile;
 mod version_file;
 
 use anyhow::{Context, Result, ensure};
@@ -383,6 +384,16 @@ pub fn version(root: &Path) -> Result<Vec<Release>> {
 /// Normal releases must use `version` instead.
 #[doc(hidden)]
 pub fn version_with_legacy_output(root: &Path, legacy: bool) -> Result<Vec<Release>> {
+    version_with_output(root, legacy, !legacy)
+}
+
+/// Reconstruct historical release trees without lockfile synchronization.
+#[doc(hidden)]
+pub fn version_with_output(
+    root: &Path,
+    legacy: bool,
+    sync_lockfiles: bool,
+) -> Result<Vec<Release>> {
     let release_config = load_release_config(root)?;
     let notes = notes(root, &release_config.config)?;
     let releases = plan(root, &release_config, &notes)?;
@@ -398,7 +409,13 @@ pub fn version_with_legacy_output(root: &Path, legacy: bool) -> Result<Vec<Relea
         return Ok(releases);
     }
     // Prepare every output before changing any input. Filesystem failures still require Git recovery.
+    let locks = if sync_lockfiles {
+        lockfile::discover(root, &config, &releases)?
+    } else {
+        Vec::new()
+    };
     let mut writes = Vec::new();
+    let mut manifests = Vec::new();
     for release in &releases {
         let pkg = &config.packages[&release.package];
         let path = checked_path(root, &pkg.path.join("CHANGELOG.md"))?;
@@ -410,12 +427,13 @@ pub fn version_with_legacy_output(root: &Path, legacy: bool) -> Result<Vec<Relea
         writes.push((path, changelog::render(release, &old, legacy)));
         let version_path = checked_path(root, &pkg.path.join(&pkg.version_file))?;
         let content = version_content(&version_path, &release.version, legacy)?;
-        writes.push((version_path, content));
+        manifests.push((version_path, content));
     }
     writes.push((
         checked_path(root, Path::new(".changenote/releases.json"))?,
         format!("{}\n", serde_json::to_string_pretty(&releases)?),
     ));
+    lockfile::apply(&manifests, &locks)?;
     for (path, content) in writes {
         fs::write(path, content)?;
     }
