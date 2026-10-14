@@ -4,6 +4,14 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Manage the Release PR or retry the latest publication
+        type: choice
+        default: manage-pr
+        options:
+          - manage-pr
+          - retry-publication
 
 permissions:
   contents: read
@@ -13,11 +21,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  route:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      manage-pr: ${{ steps.route.outputs.manage-pr }}
+      publish: ${{ steps.route.outputs.publish }}
+      release-commit: ${{ steps.route.outputs.release-commit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v7
+      - name: Route release operation
+        id: route
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --no-project python scripts/action/route-release.py
+
   release:
+    needs: route
     permissions:
       contents: write
       pull-requests: write
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.route.outputs.manage-pr == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -38,8 +68,8 @@ jobs:
   publish:
     outputs:
       release-commit: ${{ steps.publish.outputs.release-commit }}
-    needs: release
-    if: ${{ always() && github.ref == 'refs/heads/main' && needs.release.result != 'cancelled' }}
+    needs: [route, release]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.route.result == 'success' && needs.route.outputs.publish == 'true' }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -55,14 +85,29 @@ jobs:
           cargo test --locked
           cargo build --locked --release
           echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
-      - uses: ./publish
-        id: publish
+      - uses: astral-sh/setup-uv@v7
+      - uses: ./preview
+        id: preview
         with:
           base-branch: main
+      - name: Check selected batch
+        env:
+          EXPECTED_RELEASE_COMMIT: ${{ needs.route.outputs.release-commit }}
+          PREVIEW_RELEASE_COMMIT: ${{ steps.preview.outputs.release-commit }}
+          PREVIEW_READY: ${{ steps.preview.outputs.ready }}
+        run: uv run --no-project python scripts/action/route-release.py check-preview
+      # Recheck the preview selection after publication fetches main, before writes.
+      - name: Publish selected batch
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_BASE_BRANCH: main
+          EXPECTED_RELEASE_COMMIT: ${{ steps.preview.outputs.release-commit }}
+        run: bash scripts/action/publish.sh "$EXPECTED_RELEASE_COMMIT"
 
   wheels:
     needs: publish
-    if: ${{ always() && needs.publish.result == 'success' && needs.publish.outputs.release-commit != '' }}
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.publish.outputs.release-commit != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -134,7 +179,7 @@ jobs:
 
   pypi:
     needs: [publish, wheels]
-    if: ${{ always() && needs.publish.result == 'success' && needs.wheels.result == 'success' }}
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.wheels.result == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: pypi

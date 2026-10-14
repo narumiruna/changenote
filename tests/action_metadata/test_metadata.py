@@ -87,18 +87,30 @@ class Metadata(unittest.TestCase):
         self.assertEqual(
             workflow["jobs"]["publish"]["permissions"], {"contents": "write"}
         )
-        self.assertEqual(workflow["jobs"]["publish"]["needs"], "release")
-        self.assertIn("always()", workflow["jobs"]["publish"]["if"])
+        self.assertEqual(workflow["jobs"]["publish"]["needs"], ["route", "release"])
+        self.assertIn("!cancelled()", workflow["jobs"]["publish"]["if"])
+        self.assertEqual(workflow["jobs"]["route"]["permissions"], {"contents": "read", "pull-requests": "read"})
+        route_checkout = workflow["jobs"]["route"]["steps"][0]["with"]
+        self.assertEqual(route_checkout["fetch-depth"], "0")
+        self.assertEqual(route_checkout["persist-credentials"], "false")
+        operation = workflow["on"]["workflow_dispatch"]["inputs"]["operation"]
+        self.assertEqual(operation["default"], "manage-pr")
+        self.assertEqual(operation["options"], ["manage-pr", "retry-publication"])
         self.assertEqual(set(workflow["on"]), {"push", "workflow_dispatch"})
         self.assertEqual(workflow["on"]["push"]["branches"], ["main"])
         self.assertEqual(
-            workflow["jobs"]["release"]["if"], "github.ref == 'refs/heads/main'"
+            workflow["jobs"]["release"]["if"], "github.ref == 'refs/heads/main' && needs.route.outputs.manage-pr == 'true'"
         )
         for name in ("release", "publish", "wheels"):
             job = workflow["jobs"][name]
             self.assertEqual(job["steps"][0]["with"]["persist-credentials"], "false")
         self.assertEqual(workflow["jobs"]["release"]["steps"][-1]["uses"], "./")
-        self.assertEqual(workflow["jobs"]["publish"]["steps"][-1]["uses"], "./publish")
+        publish_steps = workflow["jobs"]["publish"]["steps"]
+        self.assertEqual(publish_steps[-1]["run"], 'bash scripts/action/publish.sh "$EXPECTED_RELEASE_COMMIT"')
+        self.assertEqual(publish_steps[-1]["env"]["EXPECTED_RELEASE_COMMIT"], "${{ steps.preview.outputs.release-commit }}")
+        self.assertEqual(publish_steps[-3]["uses"], "./preview")
+        self.assertEqual(publish_steps[-2]["env"]["EXPECTED_RELEASE_COMMIT"], "${{ needs.route.outputs.release-commit }}")
+        self.assertIn("check-preview", publish_steps[-2]["run"])
         ci = read_yaml(ROOT / ".github/workflows/ci.yml")
         self.assertTrue({"actions", "python", "check"}.issubset(ci["jobs"]))
 
@@ -181,6 +193,44 @@ class Metadata(unittest.TestCase):
         self.assertIn("uv publish --trusted-publishing never", command)
         self.assertIn("--check-url https://pypi.org/simple/", command)
 
+    def test_job_conditions_execute_routing_and_failure_cases(self):
+        jobs = read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]
+
+        def enabled(job, values, cancelled=False):
+            condition = jobs[job]["if"].removeprefix("${{").removesuffix("}}").strip()
+            condition = condition.replace("!cancelled()", str(not cancelled))
+            condition = condition.replace("&&", " and ").replace("||", " or ")
+            condition = re.sub(r"(?:github|needs)\.[\w.-]+", lambda match: repr(values[match[0]]), condition)
+            return eval(condition, {"__builtins__": {}})
+
+        values = {
+            "github.ref": "refs/heads/main",
+            "needs.route.result": "success",
+            "needs.route.outputs.manage-pr": "true",
+            "needs.route.outputs.publish": "false",
+            "needs.publish.result": "skipped",
+            "needs.publish.outputs.release-commit": "",
+            "needs.wheels.result": "skipped",
+        }
+        self.assertTrue(enabled("release", values))
+        for job in ("publish", "wheels", "pypi"):
+            self.assertFalse(enabled(job, values))
+        # Explicit retry skips PR management. Publication need not create new tags.
+        values.update({"needs.route.outputs.manage-pr": "false", "needs.route.outputs.publish": "true"})
+        self.assertFalse(enabled("release", values))
+        self.assertTrue(enabled("publish", values))
+        values.update({"needs.publish.result": "success", "needs.publish.outputs.release-commit": "validated", "needs.wheels.result": "success"})
+        for job in ("publish", "wheels", "pypi"):
+            self.assertTrue(enabled(job, values))
+            self.assertFalse(enabled(job, values, cancelled=True))
+        for result in ("failure", "cancelled", "skipped"):
+            self.assertFalse(enabled("publish", dict(values, **{"needs.route.result": result})))
+            self.assertFalse(enabled("wheels", dict(values, **{"needs.publish.result": result})))
+            self.assertFalse(enabled("pypi", dict(values, **{"needs.wheels.result": result})))
+        self.assertFalse(enabled("wheels", dict(values, **{"needs.publish.outputs.release-commit": ""})))
+        # Publish has no release-result predicate: PR failure must not block recovery.
+        self.assertNotIn("needs.release.result", jobs["publish"]["if"])
+
     def test_readme_examples_and_contracts(self):
         readme = (ROOT / "README.md").read_text()
         blocks = re.findall(r"```yaml\n(.*?)```", readme, re.DOTALL)
@@ -225,7 +275,7 @@ class Metadata(unittest.TestCase):
         )
         self.assertNotIn(
             "preview", read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]
-        )
+        )  # Preview is a pre-write step, not a separate production job.
         for path in (
             ROOT / "action.yml",
             ROOT / "publish/action.yml",

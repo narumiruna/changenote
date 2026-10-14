@@ -46,6 +46,9 @@ if args[0] == "api":
         if not state.get("omit_permissions"):
             repo["permissions"] = {"push": not state.get("no_write")}
         emit(repo)
+    if "/commits/" in endpoint and "/pulls?" in endpoint:
+        sha = endpoint.split("/commits/", 1)[1].split("/", 1)[0]
+        emit(state.get("commit_pulls", {}).get(sha, [[]]))
     if "/pulls?" in endpoint:
         for pr in state["pulls"]:
             sha = subprocess.check_output(
