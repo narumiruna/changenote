@@ -1,15 +1,19 @@
 [
   {
     "package": "changenote",
-    "old_version": "0.2.0",
-    "version": "0.3.0",
+    "old_version": "0.3.0",
+    "version": "0.4.0",
     "bump": "minor",
-    "tag": "v0.3.0",
+    "tag": "v0.4.0",
     "notes": [
-      "Group changelog notes by their own bump and preserve existing titles, introductions, and prior entries. Publication verifies exact current or legacy release trees for older batches.",
-      "Create one note with independent package bumps using repeatable --major, --minor, and --patch options while retaining the shared-bump CLI and Rust add API.",
-      "Add read-only PR note checks against a Git merge base with JSON reports and explicit release exemptions. Validate committed changes in a clean repository; this is a PR-level check, not per-package coverage.",
-      "Replace only the top-level package.json version token, preserving all other bytes. Reject duplicate top-level version keys before writes."
+      "Synchronize existing Cargo.lock, uv.lock, and package-lock.json files after manifest version updates, including shared workspace locks. Install Cargo, uv, or npm and populate its cache before running version for projects with matching lockfiles. Commands run offline, npm lifecycle scripts are disabled, and manager failures restore manifest and lockfile contents without consuming notes. Upgrade the CLI and release Actions together to stage and verify lockfile outputs.",
+      "Generate collision-safe note names when add omits the positional name.",
+      "Use Cargo.toml as the repository release version source.",
+      "Support disjoint fixed version groups with shared versions and direct-note provenance.",
+      "Add opt-in direct note paths to release plans without changing default or saved JSON.",
+      "Add a read-only GitHub publication preview with complete batch validation and conflict reports.",
+      "Use the PYPI_TOKEN GitHub Actions secret for PyPI publication instead of Trusted Publishing. Configure a PyPI API token scoped to changenote as PYPI_TOKEN in the pypi environment or repository before publishing.",
+      "Read the configured Cargo.toml version source when preparing Python releases and checking installed wheels, without requiring a root VERSION file. Keep build-only synchronization for older releases configured with VERSION."
     ]
   }
 ]

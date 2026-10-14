@@ -1,3 +1,25 @@
+## 0.4.0
+
+### Minor Changes
+
+- Synchronize existing Cargo.lock, uv.lock, and package-lock.json files after manifest version updates, including shared workspace locks. Install Cargo, uv, or npm and populate its cache before running version for projects with matching lockfiles. Commands run offline, npm lifecycle scripts are disabled, and manager failures restore manifest and lockfile contents without consuming notes. Upgrade the CLI and release Actions together to stage and verify lockfile outputs.
+
+- Generate collision-safe note names when add omits the positional name.
+
+- Support disjoint fixed version groups with shared versions and direct-note provenance.
+
+- Add opt-in direct note paths to release plans without changing default or saved JSON.
+
+- Add a read-only GitHub publication preview with complete batch validation and conflict reports.
+
+### Patch Changes
+
+- Use Cargo.toml as the repository release version source.
+
+- Use the PYPI_TOKEN GitHub Actions secret for PyPI publication instead of Trusted Publishing. Configure a PyPI API token scoped to changenote as PYPI_TOKEN in the pypi environment or repository before publishing.
+
+- Read the configured Cargo.toml version source when preparing Python releases and checking installed wheels, without requiring a root VERSION file. Keep build-only synchronization for older releases configured with VERSION.
+
 ## 0.3.0
 
 ### Minor Changes
