@@ -155,6 +155,18 @@ class Metadata(unittest.TestCase):
         self.assertLess(
             wheels["steps"].index(prepare_dist), wheels["steps"].index(sdist)
         )
+        prepare = next(
+            step for step in wheels["steps"] if step.get("name") == "Set release build version"
+        )
+        self.assertEqual(prepare["id"], "prepare")
+        self.assertIn("prepare-python-release.py source", prepare["run"])
+        self.assertIn('echo "version=$version" >> "$GITHUB_OUTPUT"', prepare["run"])
+        check = next(
+            step for step in wheels["steps"] if step.get("name") == "Check installed wheel version"
+        )
+        self.assertEqual(check["env"]["EXPECTED_VERSION"], "${{ steps.prepare.outputs.version }}")
+        self.assertIn('test "$actual" = "changenote $EXPECTED_VERSION"', check["run"])
+        self.assertNotIn("< VERSION", check["run"])
         pypi = jobs["pypi"]
         self.assertEqual(pypi["needs"], ["publish", "wheels"])
         self.assertIn("needs.wheels.result == 'success'", pypi["if"])

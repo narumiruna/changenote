@@ -39,7 +39,7 @@ uv cache keys include the Rust sources and Cargo manifests, so Rust edits cause 
 
 The Python distribution uses `dynamic = ["version"]`: maturin reads the version directly from root `Cargo.toml`. The wheel metadata and the packaged CLI's `--version` therefore use the same Rust crate version; do not add a separate Python manifest version.
 
-Release notes are collected under `changenote`, with the changelog at root `CHANGELOG.md`. The current single release package uses `v<version>` tags. Changenote does not update committed Cargo files from root `VERSION`. For manual publication, make the Rust crate version match `VERSION` and update lockfiles first. Use a version that is not already published on PyPI.
+Release notes are collected under `changenote`, with the changelog at root `CHANGELOG.md`. The current single release package uses `v<version>` tags. The release version source is root `Cargo.toml`; `changenote version` also synchronizes the existing `Cargo.lock`. For manual publication, update the Rust crate version and lockfile first. Use a version that is not already published on PyPI.
 
 ## Automated publication
 
@@ -63,7 +63,7 @@ Supported wheels:
 
 Each wheel is installed and its CLI version is checked on its native runner. One Linux job also builds the source archive. Alpine/musl wheels and Windows ARM64 wheels are not included.
 
-Builds use the release commit returned by the publication Action, not the latest main tree. The preparation script from the workflow revision checks the saved batch against `VERSION`, then sets only the root package versions in `Cargo.toml` and `Cargo.lock` in a disposable checkout. Dependency versions and committed release files are unchanged. Wheel metadata and the CLI version therefore match `VERSION`.
+Builds use the release commit returned by the publication Action, not the latest main tree. The preparation script from the workflow revision checks the configured version source against the saved batch and validates the local package version in `Cargo.lock`. Current releases use `Cargo.toml` and need no build-only version changes. Older releases configured with `VERSION` receive root Cargo package version synchronization in a disposable checkout. Dependency versions and committed release files are unchanged. Wheel metadata and the CLI version must match the validated release version.
 
 Before enabling uploads:
 
