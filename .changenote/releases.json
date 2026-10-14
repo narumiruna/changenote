@@ -1,14 +1,15 @@
 [
   {
     "package": "changenote",
-    "old_version": "0.1.2",
-    "version": "0.2.0",
+    "old_version": "0.2.0",
+    "version": "0.3.0",
     "bump": "minor",
-    "tag": "v0.2.0",
+    "tag": "v0.3.0",
     "notes": [
-      "Support optional $schema metadata in configuration and provide a repository JSON Schema for editor validation and completion.\n\nBreaking Rust API change: Config now has a public schema: Option<String> field. Add schema: None to existing struct literals. Include schema in exhaustive destructuring, or use .. to ignore it. Existing configuration files remain supported.",
-      "Support pyproject.toml, Cargo.toml, and package.json as configured version files while retaining plain-text VERSION support.",
-      "Preserve exact numbers and objects in unrelated package.json fields when updating the version, including objects with serde_json private keys."
+      "Group changelog notes by their own bump and preserve existing titles, introductions, and prior entries. Publication verifies exact current or legacy release trees for older batches.",
+      "Create one note with independent package bumps using repeatable --major, --minor, and --patch options while retaining the shared-bump CLI and Rust add API.",
+      "Add read-only PR note checks against a Git merge base with JSON reports and explicit release exemptions. Validate committed changes in a clean repository; this is a PR-level check, not per-package coverage.",
+      "Replace only the top-level package.json version token, preserving all other bytes. Reject duplicate top-level version keys before writes."
     ]
   }
 ]
