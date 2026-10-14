@@ -2,12 +2,12 @@
 
 ### Major Changes
 
-- <Breaking change and migration steps.>
+- <Summary of a note assigned a major bump.>
 
 ### Minor Changes
 
-- <Backward-compatible feature and its user-visible effect.>
+- <Summary of a note assigned a minor bump.>
 
 ### Patch Changes
 
-- <Backward-compatible fix and the corrected behavior.>
+- <Summary of a note assigned a patch bump.>
