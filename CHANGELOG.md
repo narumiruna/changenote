@@ -1,3 +1,9 @@
+## 0.5.1
+
+### Patch Changes
+
+- Fix release skill guidance by placing PR links in change notes and removing instructions for unused release notes files.
+
 ## 0.5.0
 
 ### Minor Changes
