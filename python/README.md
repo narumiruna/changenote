@@ -13,7 +13,7 @@ uvx changenote --help
 uvx changenote status
 ```
 
-The Release workflow publishes this binary-wrapper distribution after its PyPI trusted publisher is configured. To test a local wheel, run from the repository root:
+The Release workflow publishes this binary-wrapper distribution after its `PYPI_TOKEN` GitHub Actions secret is configured. To test a local wheel, run from the repository root:
 
 ```sh
 uv build --out-dir dist/python-binary
@@ -43,7 +43,7 @@ Release notes are collected under `changenote`, with the changelog at root `CHAN
 
 ## Automated publication
 
-The repository's `.github/workflows/release.yml` uses the same core approach as uv: maturin Action builds distributions, and `uv publish` uploads them with Trusted Publishing.
+The repository's `.github/workflows/release.yml` uses the same core approach as uv: maturin Action builds distributions, and `uv publish` uploads them with the `PYPI_TOKEN` GitHub Actions secret.
 
 ```mermaid
 flowchart LR
@@ -52,7 +52,7 @@ flowchart LR
     B --> D[Build source archive]
     C --> E[Collect artifacts]
     D --> E
-    E --> F[uv publish with PyPI OIDC]
+    E --> F[uv publish with PYPI_TOKEN]
 ```
 
 Supported wheels:
@@ -68,8 +68,8 @@ Builds use the release commit returned by the publication Action, not the latest
 Before enabling uploads:
 
 1. Create the GitHub environment `pypi`. Restrict deployments to `main`; add required reviewers if approval is needed.
-2. In the existing PyPI project's **Publishing** settings, add a GitHub trusted publisher with owner `narumiruna`, repository `changenote`, workflow filename `release.yml`, and environment `pypi`.
-3. Confirm that the next release version is unused on PyPI. No API token secret is needed; the upload job has only `id-token: write` permission.
+2. Create a PyPI API token scoped to the existing `changenote` project. Store it as a GitHub Actions secret named `PYPI_TOKEN` in the `pypi` environment or repository.
+3. Confirm that the next release version is unused on PyPI. The upload step passes the secret through `UV_PUBLISH_TOKEN` and disables Trusted Publishing. The upload job has only `contents: read` permission.
 
 After a partial failure, rerun **Release** on `main`. Wheel builds run even when the GitHub tag and Release already exist. `uv publish --check-url https://pypi.org/simple/` skips matching files that were already uploaded and rejects conflicting contents. A rebuilt artifact can differ from an earlier upload; inspect conflicts instead of replacing published files. Do not merge another Release PR until the current batch is fully published. The workflow discovers only the latest batch.
 
