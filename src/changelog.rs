@@ -1,4 +1,5 @@
 use crate::{Bump, Release};
+use anyhow::{Result, ensure};
 use semver::Version;
 
 pub(crate) fn render(release: &Release, old: &str, legacy: bool) -> String {
@@ -52,6 +53,35 @@ fn items<'a>(notes: impl Iterator<Item = &'a str>) -> String {
 
 // Only ATX SemVer headings outside fenced or indented code start a release.
 fn first_version_heading(text: &str) -> Option<usize> {
+    version_headings(text).first().map(|(start, _, _)| *start)
+}
+
+pub(crate) fn extract(text: &str, version: &Version) -> Result<String> {
+    let headings = version_headings(text);
+    let matches: Vec<_> = headings
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, _, v))| v == version)
+        .collect();
+    ensure!(
+        matches.len() == 1,
+        "expected exactly one changelog entry for {version}, found {}",
+        matches.len()
+    );
+    let (index, (_, start, _)) = matches[0];
+    let end = headings
+        .get(index + 1)
+        .map_or(text.len(), |(start, _, _)| *start);
+    let body = text[*start..end].trim_matches(['\r', '\n']);
+    ensure!(
+        !body.trim().is_empty(),
+        "empty changelog entry for {version}"
+    );
+    Ok(format!("{body}\n"))
+}
+
+fn version_headings(text: &str) -> Vec<(usize, usize, Version)> {
+    let mut headings = Vec::new();
     let mut offset = 0;
     let mut fence: Option<(u8, usize)> = None;
     for line in text.split_inclusive('\n') {
@@ -79,15 +109,15 @@ fn first_version_heading(text: &str) -> Option<usize> {
                         .is_some_and(u8::is_ascii_whitespace)
                 {
                     let version = text[count..].split_whitespace().next().unwrap_or("");
-                    if Version::parse(version).is_ok() {
-                        return Some(offset);
+                    if let Ok(version) = Version::parse(version) {
+                        headings.push((offset, offset + line.len(), version));
                     }
                 }
             }
         }
         offset += line.len();
     }
-    None
+    headings
 }
 
 #[cfg(test)]

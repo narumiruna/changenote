@@ -446,7 +446,7 @@ class Actions(unittest.TestCase):
                     ),
                     "tag",
                 )
-                self.assertEqual(self.state()["releases"][0]["body"], "Fix behavior\n")
+                self.assertEqual(self.state()["releases"][0]["body"], "### Patch Changes\n\n- Fix behavior\n")
                 _, outputs = self.action("publish")
                 self.assertEqual(outputs["published"], "false")
                 self.assertEqual(outputs["published-packages"], "[]")
@@ -475,15 +475,13 @@ class Actions(unittest.TestCase):
         self.git("push", "origin", "main")
         return release
 
-    def test_legacy_tree_is_verified_and_retry_safe(self):
-        release = self.legacy_release()
+    def test_old_note_bearing_batch_is_unsupported(self):
+        self.legacy_release()
         self.later_commit()
-        _, outputs = self.action("publish")
-        self.assertEqual(outputs["release-commit"], release)
-        self.assertEqual(outputs["published"], "true")
-        _, outputs = self.action("publish")
-        self.assertEqual(outputs["published"], "false")
-        self.assertEqual(len(self.state()["releases"]), 1)
+        result, _ = self.action("publish", ok=False)
+        self.assertIn("parent release plan", result.stderr)
+        self.assertEqual(self.state()["releases"], [])
+        self.assertEqual(self.git("ls-remote", "--tags", "origin"), "")
 
     def assert_legacy_changelog_rejected(self, content):
         self.legacy_release()
@@ -493,7 +491,7 @@ class Actions(unittest.TestCase):
         self.git("push", "--force", "origin", "main")
         result, _ = self.action("publish", ok=False)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("generated release tree", result.stderr)
+        self.assertIn("parent release plan", result.stderr)
         self.assertEqual(self.state()["releases"], [])
         self.assertEqual(self.git("ls-remote", "--tags", "origin"), "")
 
@@ -572,10 +570,28 @@ class Actions(unittest.TestCase):
             release,
         )
         self.later_commit()
+        (self.repo / "CHANGELOG.md").write_text("Later changelog must not be published")
+        self.commit("later changelog")
+        self.git("push", "origin", "main")
         self.set_state(release_fail=None)
         _, outputs = self.action("publish")
         self.assertEqual(outputs["published"], "true")
         self.assertEqual(len(self.state()["releases"]), 1)
+        self.assertEqual(self.state()["releases"][0]["body"], "### Patch Changes\n\n- Fix behavior\n")
+
+    def test_retry_preserves_custom_release_text_and_historical_changelog(self):
+        release = self.release()
+        self.action("publish")
+        records = self.state()["releases"]
+        records[0]["body"] = "Custom release text"
+        self.set_state(releases=records)
+        (self.repo / "CHANGELOG.md").write_text("Later unrelated changelog")
+        self.commit("later changelog")
+        self.git("push", "origin", "main")
+        _, outputs = self.action("publish")
+        self.assertEqual(outputs["release-commit"], release)
+        self.assertEqual(outputs["published"], "false")
+        self.assertEqual(self.state()["releases"][0]["body"], "Custom release text")
 
     def test_release_create_race(self):
         self.release()
@@ -864,6 +880,60 @@ class Actions(unittest.TestCase):
             [{"name": "pkg-b", "version": "2.1.0"}],
         )
         self.assertEqual(len(self.state()["releases"]), 2)
+
+    def test_grouped_multiline_bodies_are_isolated_by_package(self):
+        (self.repo / "b").mkdir()
+        (self.repo / "b/VERSION").write_text("2.0.0\n")
+        (self.repo / ".changenote/config.json").write_text(json.dumps({"packages": {
+            "pkg": {"path": ".", "version_file": "VERSION"},
+            "pkg-b": {"path": "b", "version_file": "VERSION"},
+        }}))
+        (self.repo / "CHANGELOG.md").write_text("# Changelog\n\nIntro\n\n## 1.0.0\nOld\n")
+        self.cli("add", "a", "--major", "pkg", "-m", "Breaking API")
+        self.cli("add", "b", "--minor", "pkg", "-m", "[Feature](https://example.com)")
+        self.cli("add", "c", "--patch", "pkg", "-m", "Fix\n\n- Nested\n\n```md\n## 9.0.0\n```")
+        self.cli("add", "d", "--patch", "pkg-b", "-m", "Only package B")
+        self.commit("package notes")
+        self.cli("version")
+        release = self.commit("release")
+        self.git("push", "origin", "main")
+        expected = {
+            "changenote/pkg@v2.0.0": "### Major Changes\n\n- Breaking API\n\n### Minor Changes\n\n- [Feature](https://example.com)\n\n### Patch Changes\n\n- Fix\n  \n  - Nested\n  \n  ```md\n  ## 9.0.0\n  ```\n",
+            "changenote/pkg-b@v2.0.1": "### Patch Changes\n\n- Only package B\n",
+        }
+        self.set_state(release_fail="changenote/pkg-b@v2.0.1")
+        self.action("publish", ok=False)
+        records = self.state()["releases"]
+        self.assertEqual(records[0]["body"], expected[records[0]["tag_name"]])
+        records[0]["body"] = "Keep custom text"
+        self.set_state(releases=records, release_fail=None)
+        (self.repo / "b/CHANGELOG.md").write_text("Later body")
+        self.commit("later changelog")
+        self.git("push", "origin", "main")
+        _, out = self.action("publish")
+        self.assertEqual(out["release-commit"], release)
+        records = self.state()["releases"]
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[0]["body"], "Keep custom text")
+        self.assertEqual(records[1]["body"], expected[records[1]["tag_name"]])
+
+    def test_ambiguous_later_package_stops_all_remote_writes(self):
+        (self.repo / "b").mkdir()
+        (self.repo / "b/VERSION").write_text("1.0.0\n")
+        (self.repo / "b/CHANGELOG.md").write_text("## 1.0.1\nAlready present\n")
+        (self.repo / ".changenote/config.json").write_text(json.dumps({"packages": {
+            "pkg": {"path": ".", "version_file": "VERSION"},
+            "pkg-b": {"path": "b", "version_file": "VERSION"},
+        }}))
+        self.cli("add", "both", "-p", "pkg", "-p", "pkg-b", "--bump", "patch", "-m", "Fix")
+        self.commit("notes and prior duplicate")
+        self.cli("version")
+        self.commit("release")
+        self.git("push", "origin", "main")
+        result, _ = self.action("publish", ok=False)
+        self.assertIn("expected exactly one changelog entry", result.stderr)
+        self.assertEqual(self.state()["releases"], [])
+        self.assertEqual(self.git("ls-remote", "--tags", "origin"), "")
 
 
 if __name__ == "__main__":

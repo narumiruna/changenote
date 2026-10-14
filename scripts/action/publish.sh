@@ -35,8 +35,8 @@ while IFS= read -r item; do
   remote_tag "$tag"
   [[ $tag_sha == "$release" ]] || fail "Remote tag identity changed: $tag"
   if ! jq -e --arg tag "$tag" 'any(.[][]; .tag_name == $tag)' "$temp/releases.json" >/dev/null; then
-    jq -r 'if (.notes | length) == 0 then "Released with its fixed version group; no direct changes." else .notes | join("\n\n") end' <<< "$item" > "$temp/notes.md"
-    if gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$tag" --notes-file "$temp/notes.md"; then
+    package=$(jq -r '.package' <<< "$item")
+    if gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$tag" --notes-file "$temp/notes/$package.md"; then
       did_publish=true
     else
       # Only a verified existing release is an acceptable race result.

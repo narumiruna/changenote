@@ -68,29 +68,22 @@ class Preview(unittest.TestCase):
             out, {"ready": "true", "release-commit": "", "publication-plan": "[]"}
         )
 
-    def test_current_and_legacy_after_later_commit(self):
-        for legacy in (False, True):
-            with self.subTest(legacy=legacy):
-                if legacy:
-                    self.doCleanups()
-                    self.setUp()
-                sha = self.f.legacy_release() if legacy else self.f.release()
-                self.f.later_commit()
-                _, out = self.preview()
-                self.assertEqual(out["ready"], "true")
-                self.assertEqual(out["release-commit"], sha)
-                self.assertEqual(
-                    json.loads(out["publication-plan"]),
-                    [
-                        {
-                            "name": "pkg",
-                            "version": "1.0.1",
-                            "tag": "v1.0.1",
-                            "action": "create-tag-and-release",
-                            "conflicts": [],
-                        }
-                    ],
-                )
+    def test_current_after_later_commit(self):
+        sha = self.f.release()
+        self.f.later_commit()
+        _, out = self.preview()
+        self.assertEqual(out["ready"], "true")
+        self.assertEqual(out["release-commit"], sha)
+        self.assertEqual(json.loads(out["publication-plan"]), [{
+            "name": "pkg", "version": "1.0.1", "tag": "v1.0.1",
+            "action": "create-tag-and-release", "conflicts": [],
+        }])
+
+    def test_old_batch_is_unsupported(self):
+        self.f.legacy_release()
+        result, out = self.preview(ok=False)
+        self.assertIn("parent release plan", result.stderr)
+        self.assertEqual(out["ready"], "false")
 
     def test_existing_matching_tag_and_complete_publication(self):
         sha = self.f.release()
@@ -185,7 +178,7 @@ class Preview(unittest.TestCase):
             ["conflict", "create-tag-and-release"],
         )
 
-    def test_invalid_tree_and_active_fixed_legacy_are_rejected(self):
+    def test_invalid_fixed_tree_is_rejected(self):
         self.fixed_release()
         (self.f.repo / "b/CHANGELOG.md").write_text("tampered")
         self.f.git("add", "--", "b/CHANGELOG.md")
@@ -193,7 +186,7 @@ class Preview(unittest.TestCase):
         self.f.git("push", "--force", "origin", "main")
         result, out = self.preview(ok=False)
         self.assertIn(
-            "legacy output does not support active fixed groups", result.stderr
+            "generated release tree", result.stderr
         )
         self.assertEqual(out["ready"], "false")
         self.assertEqual(out["publication-plan"], "[]")
@@ -207,7 +200,7 @@ class Preview(unittest.TestCase):
         self.f.git("commit", "--amend", "--no-edit")
         self.f.git("push", "--force", "origin", "main")
         result, out = self.preview(ok=False)
-        self.assertIn("generated release tree", result.stderr)
+        self.assertIn("parent release plan", result.stderr)
         self.assertEqual(out["ready"], "false")
 
     def test_api_and_fetch_failures_do_not_claim_readiness(self):
