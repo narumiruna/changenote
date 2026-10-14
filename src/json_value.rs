@@ -75,6 +75,44 @@ impl<'de> Deserialize<'de> for JsonValue {
     }
 }
 
+// Borrowed RawValue tokens refer directly to the input, so their offsets can
+// select the exact value without scanning strings or interpreting number tokens.
+pub(crate) fn version_span(content: &str) -> serde_json::Result<std::ops::Range<usize>> {
+    struct VersionToken<'a>(&'a RawValue);
+    impl<'de> Deserialize<'de> for VersionToken<'de> {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct Visitor;
+            impl<'de> de::Visitor<'de> for Visitor {
+                type Value = VersionToken<'de>;
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    f.write_str("a JSON object with one version key")
+                }
+                fn visit_map<M: de::MapAccess<'de>>(
+                    self,
+                    mut map: M,
+                ) -> Result<Self::Value, M::Error> {
+                    let mut version = None;
+                    while let Some((key, value)) = map.next_entry::<String, &'de RawValue>()? {
+                        if key == "version" {
+                            if version.is_some() {
+                                return Err(de::Error::custom("duplicate top-level version key"));
+                            }
+                            version = Some(value);
+                        }
+                    }
+                    Ok(VersionToken(
+                        version.ok_or_else(|| de::Error::custom("missing version"))?,
+                    ))
+                }
+            }
+            deserializer.deserialize_map(Visitor)
+        }
+    }
+    let token: VersionToken<'_> = serde_json::from_str(content)?;
+    let start = token.0.get().as_ptr() as usize - content.as_ptr() as usize;
+    Ok(start..start + token.0.get().len())
+}
+
 pub(crate) struct Object<T>(Vec<(String, T)>);
 
 impl<T: Serialize> Serialize for Object<T> {

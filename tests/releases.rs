@@ -126,7 +126,7 @@ fn consumes_notes_and_preserves_previous_changelog() {
         "0.1.0\n"
     );
     let log = fs::read_to_string(dir.path().join("CHANGELOG.md")).unwrap();
-    assert!(log.starts_with("## 0.1.0\n\n- Initial release"));
+    assert!(log.starts_with("## 0.1.0\n\n### Minor Changes\n\n- Initial release"));
     assert!(log.contains("Old entry"));
     assert!(!dir.path().join(".changenote/hello-world.md").exists());
     assert!(dir.path().join(".changenote/README.md").exists());

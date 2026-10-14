@@ -391,6 +391,54 @@ class Actions(unittest.TestCase):
                 self.action()
                 self.assertEqual(len(self.state()["pulls"]), 2)
 
+    def legacy_release(self):
+        # Independent fixture of the pre-feature writer: flat entries before the
+        # title, and two-space JSON with a final newline. No replay CLI is used.
+        config = {"packages": {"pkg": {"path": ".", "version_file": "package.json"}}}
+        (self.repo / ".changenote/config.json").write_text(json.dumps(config))
+        (self.repo / "package.json").write_text('{\n\t"name": "pkg",\n\t"version": "1.0.0"\n}')
+        old_log = "# Changelog\n\nIntroduction\n\n## 1.0.0\n\nOld\n"
+        (self.repo / "CHANGELOG.md").write_text(old_log)
+        self.commit("manifest fixture")
+        self.note()
+        plan_text = self.cli("status") + "\n"
+        (self.repo / ".changenote/releases.json").write_text(plan_text)
+        (self.repo / "package.json").write_text(json.dumps({"name": "pkg", "version": "1.0.1"}, indent=2) + "\n")
+        (self.repo / "CHANGELOG.md").write_text("## 1.0.1\n\n- Fix behavior\n\n" + old_log)
+        (self.repo / ".changenote/fix.md").unlink()
+        release = self.commit("legacy release")
+        self.git("push", "origin", "main")
+        return release
+
+    def test_legacy_tree_is_verified_and_retry_safe(self):
+        release = self.legacy_release()
+        self.later_commit()
+        _, outputs = self.action("publish")
+        self.assertEqual(outputs["release-commit"], release)
+        self.assertEqual(outputs["published"], "true")
+        _, outputs = self.action("publish")
+        self.assertEqual(outputs["published"], "false")
+        self.assertEqual(len(self.state()["releases"]), 1)
+
+    def assert_legacy_changelog_rejected(self, content):
+        self.legacy_release()
+        (self.repo / "CHANGELOG.md").write_text(content)
+        self.git("add", "CHANGELOG.md")
+        self.git("commit", "--amend", "--no-edit")
+        self.git("push", "--force", "origin", "main")
+        result, _ = self.action("publish", ok=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("generated release tree", result.stderr)
+        self.assertEqual(self.state()["releases"], [])
+        self.assertEqual(self.git("ls-remote", "--tags", "origin"), "")
+
+    def test_legacy_tree_tampering_is_rejected(self):
+        self.assert_legacy_changelog_rejected("arbitrary changelog")
+
+    def test_mixed_output_profiles_are_rejected(self):
+        # Current changelog with legacy JSON is not either complete profile.
+        self.assert_legacy_changelog_rejected("# Changelog\n\nIntroduction\n\n## 1.0.1\n\n### Patch Changes\n\n- Fix behavior\n\n## 1.0.0\n\nOld\n")
+
     def test_no_batch(self):
         _, outputs = self.action("publish")
         self.assertEqual(

@@ -25,10 +25,20 @@ enum Commands {
     /// Add a Markdown note without an interactive prompt.
     Add {
         name: String,
-        #[arg(short, long, required = true)]
+        /// Shared-bump mode; cannot be combined with --major/--minor/--patch.
+        #[arg(short, long, requires = "bump", conflicts_with_all = ["major", "minor", "patch"])]
         package: Vec<String>,
-        #[arg(long, value_enum)]
-        bump: Bump,
+        #[arg(long, value_enum, requires = "package", conflicts_with_all = ["major", "minor", "patch"])]
+        bump: Option<Bump>,
+        /// Repeat for each package requiring a major bump.
+        #[arg(long)]
+        major: Vec<String>,
+        /// Repeat for each package requiring a minor bump.
+        #[arg(long)]
+        minor: Vec<String>,
+        /// Repeat for each package requiring a patch bump.
+        #[arg(long)]
+        patch: Vec<String>,
         #[arg(short, long)]
         message: String,
     },
@@ -38,8 +48,23 @@ enum Commands {
         #[arg(long)]
         include_note_bumps: bool,
     },
+    /// Check committed PR changes against a merge base; requires a clean Git tree.
+    /// This is a PR-level note check, not per-package coverage. Prints JSON; writes no files.
+    Check {
+        #[arg(long)]
+        since: String,
+        /// Exempt this PR from the missing-note rule, not input validation.
+        #[arg(long, requires = "reason")]
+        skip_release: bool,
+        #[arg(long, requires = "skip_release")]
+        reason: Option<String>,
+    },
     /// Apply the plan, update changelogs, and consume notes.
-    Version,
+    Version {
+        /// Reconstruct older release trees. Reserved for the publication Action.
+        #[arg(long, hide = true)]
+        legacy_output: bool,
+    },
     /// Create local annotated tags for the committed release plan.
     Tag,
 }
@@ -52,11 +77,24 @@ fn run() -> Result<()> {
             name,
             package,
             bump,
+            major,
+            minor,
+            patch,
             message,
-        } => println!(
-            "{}",
-            changenote::add(&cli.root, &name, package, bump, &message)?.display()
-        ),
+        } => {
+            let mut changes: Vec<_> = package.into_iter().map(|p| (p, bump.unwrap())).collect();
+            for (packages, bump) in [
+                (major, Bump::Major),
+                (minor, Bump::Minor),
+                (patch, Bump::Patch),
+            ] {
+                changes.extend(packages.into_iter().map(|p| (p, bump)));
+            }
+            println!(
+                "{}",
+                changenote::add_with_bumps(&cli.root, &name, changes, &message)?.display()
+            );
+        }
         Commands::Status { include_note_bumps } => {
             let releases = changenote::status(&cli.root)?;
             if include_note_bumps {
@@ -69,9 +107,24 @@ fn run() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&releases)?);
             }
         }
-        Commands::Version => println!(
+        Commands::Check {
+            since,
+            skip_release,
+            reason,
+        } => {
+            let report = changenote::check(&cli.root, &since, skip_release, reason.as_deref())?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            anyhow::ensure!(
+                report.passed,
+                "changed packages have no PR note; add a note or use --skip-release --reason"
+            );
+        }
+        Commands::Version { legacy_output } => println!(
             "{}",
-            serde_json::to_string_pretty(&changenote::version(&cli.root)?)?
+            serde_json::to_string_pretty(&changenote::version_with_legacy_output(
+                &cli.root,
+                legacy_output
+            )?)?
         ),
         Commands::Tag => {
             for tag in changenote::tag(&cli.root)? {
