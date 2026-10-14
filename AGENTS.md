@@ -26,18 +26,18 @@
   - Add a note for new features, bug fixes, breaking changes, and changes to installation or other user-facing behavior.
   - No note is required for documentation-only changes or test-only changes.
   - No note is required for internal refactors that do not affect users or release artifacts.
-- Select affected package names from `.changenote/config.json`.
-  - The CLI package name is `changenote`, not `cli`.
-- Select the bump type for each affected package:
-  - Use `minor` for backward-compatible features.
-  - Use `patch` for backward-compatible fixes.
-  - Until the release compatibility policy is defined, use `minor` for breaking changes.
-    - Use `major` instead only when the user explicitly requests it.
-    - Describe the breaking change and migration steps in the note.
-- Create notes with `cargo run --locked -p changenote -- add <note-name> --package <package-name> --bump <major|minor|patch> --message "<release summary>"`.
-  - If a note exists for the same change, update it instead of creating a duplicate.
-- Run `cargo run --locked -p changenote -- status` after you add or update notes.
-  - Confirm the affected packages and bumps.
-  - Resolve validation errors before you commit.
+  - Select affected package names from `.changenote/config.json`.
+    - The CLI package name is `changenote`, not `cli`.
+  - Select the bump type for each affected package:
+    - Use `minor` for backward-compatible features.
+    - Use `patch` for backward-compatible fixes.
+    - Until the release compatibility policy is defined, use `minor` for breaking changes.
+      - Use `major` instead only when the user explicitly requests it.
+      - Describe the breaking change and migration steps in the note.
+  - Create notes with `cargo run --locked -p changenote -- add <note-name> --package <package-name> --bump <major|minor|patch> --message "<release summary>"`.
+    - If a note exists for the same change, update it instead of creating a duplicate.
+  - Run `cargo run --locked -p changenote -- status` after you add or update notes.
+    - Confirm the affected packages and bumps.
+    - Resolve validation errors before you commit.
 - When the user requests a commit, include the relevant note with the implementation.
 - If no note is needed, state the reason in the completion report.
