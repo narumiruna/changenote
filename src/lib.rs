@@ -1,5 +1,9 @@
 mod changelog;
+mod generated;
+mod planning;
+pub use generated::add_generated;
 mod check;
+pub use planning::{DetailedRelease, FixedGroup, status_with_note_paths};
 mod json_value;
 pub use check::{CheckReport, check};
 mod version_file;
@@ -103,9 +107,50 @@ fn checked_path(root: &Path, path: &Path) -> Result<PathBuf> {
     Ok(full)
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConfigFile {
+    #[serde(rename = "$schema")]
+    schema: Option<String>,
+    packages: BTreeMap<String, Package>,
+    #[serde(default)]
+    fixed: Vec<Vec<String>>,
+}
+
+struct ReleaseConfig {
+    config: Config,
+    fixed: Vec<Vec<String>>,
+}
+
+/// Validate all configuration, including fixed groups, and return package settings.
 pub fn load_config(root: &Path) -> Result<Config> {
+    Ok(load_release_config(root)?.config)
+}
+
+fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
     let path = checked_path(root, Path::new(".changenote/config.json"))?;
-    let config: Config = serde_json::from_str(&fs::read_to_string(path)?)?;
+    let file: ConfigFile = serde_json::from_str(&fs::read_to_string(path)?)?;
+    let config = Config {
+        schema: file.schema,
+        packages: file.packages,
+    };
+    let mut members = std::collections::BTreeSet::new();
+    for group in &file.fixed {
+        ensure!(
+            group.len() >= 2,
+            "fixed groups require at least two packages"
+        );
+        for name in group {
+            ensure!(
+                config.packages.contains_key(name),
+                "unknown fixed package {name}"
+            );
+            ensure!(
+                members.insert(name),
+                "duplicate or overlapping fixed package {name}"
+            );
+        }
+    }
     ensure!(
         !config.packages.is_empty(),
         "config must contain at least one package"
@@ -154,7 +199,10 @@ pub fn load_config(root: &Path) -> Result<Config> {
         );
         read_version(&file)?;
     }
-    Ok(config)
+    Ok(ReleaseConfig {
+        config,
+        fixed: file.fixed,
+    })
 }
 
 pub fn parse_note(content: &str) -> Result<Note> {
@@ -216,53 +264,16 @@ fn notes(root: &Path, config: &Config) -> Result<Vec<(PathBuf, Note)>> {
     Ok(result)
 }
 
-fn plan(root: &Path, config: &Config, notes: &[(PathBuf, Note)]) -> Result<Vec<Release>> {
-    let mut releases = Vec::new();
-    for (name, pkg) in &config.packages {
-        let changes: Vec<_> = notes
-            .iter()
-            .filter_map(|(_, n)| n.packages.get(name).map(|b| (*b, n.summary.clone())))
-            .collect();
-        let Some(bump) = changes.iter().map(|(b, _)| *b).max() else {
-            continue;
-        };
-        let old_version = read_version(&root.join(&pkg.path).join(&pkg.version_file))?;
-        let mut version = old_version.clone();
-        match bump {
-            Bump::Major => {
-                version.major = version.major.checked_add(1).context("version overflow")?;
-                version.minor = 0;
-                version.patch = 0;
-            }
-            Bump::Minor => {
-                version.minor = version.minor.checked_add(1).context("version overflow")?;
-                version.patch = 0;
-            }
-            Bump::Patch => {
-                version.patch = version.patch.checked_add(1).context("version overflow")?;
-            }
-        }
-        let tag = if config.packages.len() == 1 {
-            format!("v{version}")
-        } else {
-            format!("changenote/{name}@v{version}")
-        };
-        releases.push(Release {
-            package: name.clone(),
-            old_version,
-            version,
-            bump,
-            tag,
-            note_bumps: changes.iter().map(|(b, _)| *b).collect(),
-            notes: changes.into_iter().map(|(_, s)| s).collect(),
-        });
-    }
-    Ok(releases)
+fn plan(root: &Path, config: &ReleaseConfig, notes: &[(PathBuf, Note)]) -> Result<Vec<Release>> {
+    Ok(planning::plan(root, config, notes)?
+        .into_iter()
+        .map(|r| r.release)
+        .collect())
 }
 
 pub fn status(root: &Path) -> Result<Vec<Release>> {
-    let config = load_config(root)?;
-    plan(root, &config, &notes(root, &config)?)
+    let config = load_release_config(root)?;
+    plan(root, &config, &notes(root, &config.config)?)
 }
 
 pub fn init(root: &Path, name: &str, version: Version) -> Result<()> {
@@ -330,6 +341,21 @@ pub fn add_with_bumps(
             .any(|n| name.eq_ignore_ascii_case(n)),
         "reserved note name"
     );
+    let content = note_content(root, packages, message)?;
+    Ok(write_note(root, name, &content)?)
+}
+
+fn write_note(root: &Path, name: &str, content: &str) -> std::io::Result<PathBuf> {
+    let path = root.join(".changenote").join(format!("{name}.md"));
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)?
+        .write_all(content.as_bytes())?;
+    Ok(path)
+}
+
+fn note_content(root: &Path, packages: Vec<(String, Bump)>, message: &str) -> Result<String> {
     ensure!(
         !packages.is_empty() && !message.trim().is_empty(),
         "packages and message are required"
@@ -342,18 +368,11 @@ pub fn add_with_bumps(
             ensure!(previous == bump, "conflicting bumps for package {pkg}");
         }
     }
-    let content = format!(
+    Ok(format!(
         "---\n{}---\n\n{}\n",
         serde_yaml::to_string(&changes)?,
         message.trim()
-    );
-    let path = root.join(".changenote").join(format!("{name}.md"));
-    fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&path)?
-        .write_all(content.as_bytes())?;
-    Ok(path)
+    ))
 }
 
 pub fn version(root: &Path) -> Result<Vec<Release>> {
@@ -364,9 +383,17 @@ pub fn version(root: &Path) -> Result<Vec<Release>> {
 /// Normal releases must use `version` instead.
 #[doc(hidden)]
 pub fn version_with_legacy_output(root: &Path, legacy: bool) -> Result<Vec<Release>> {
-    let config = load_config(root)?;
-    let notes = notes(root, &config)?;
-    let releases = plan(root, &config, &notes)?;
+    let release_config = load_release_config(root)?;
+    let notes = notes(root, &release_config.config)?;
+    let releases = plan(root, &release_config, &notes)?;
+    ensure!(
+        !legacy
+            || !releases
+                .iter()
+                .any(|r| release_config.fixed.iter().any(|g| g.contains(&r.package))),
+        "legacy output does not support active fixed groups"
+    );
+    let config = release_config.config;
     if releases.is_empty() {
         return Ok(releases);
     }

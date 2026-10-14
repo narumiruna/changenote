@@ -8,6 +8,7 @@ readme = "README.md"
 
 [dependencies]
 anyhow = "1"
+getrandom = "0.4"
 clap = { version = "4", features = ["derive"] }
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }

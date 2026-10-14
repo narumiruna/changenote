@@ -11,6 +11,16 @@
       "description": "Schema reference for editors. The CLI does not fetch or validate this reference.",
       "type": ["string", "null"]
     },
+    "fixed": {
+      "description": "Disjoint groups of at least two known packages that release at one version. Membership is also checked by the CLI.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 2,
+        "uniqueItems": true,
+        "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+      }
+    },
     "packages": {
       "type": "object",
       "minProperties": 1,

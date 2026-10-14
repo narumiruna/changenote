@@ -1,0 +1,29 @@
+name: Changenote Publication Preview
+description: Inspect the latest validated batch without changing source Git state or publishing (Linux).
+inputs:
+  github-token:
+    description: Token with contents read permission.
+    default: ${{ github.token }}
+  base-branch:
+    description: Base branch. Defaults to the repository default branch.
+    default: ''
+outputs:
+  release-commit:
+    description: Validated release commit, or an empty string.
+    value: ${{ steps.preview.outputs.release-commit }}
+  ready:
+    description: Whether complete inspection found no conflicts. False on errors.
+    value: ${{ steps.preview.outputs.ready }}
+  publication-plan:
+    description: JSON array of name, version, tag, action, and conflicts objects. Empty when no batch exists.
+    value: ${{ steps.preview.outputs.publication-plan }}
+runs:
+  using: composite
+  steps:
+    - id: preview
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_BASE_BRANCH: ${{ inputs.base-branch }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/../scripts/action/preview.sh"

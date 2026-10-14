@@ -1,4 +1,4 @@
-use crate::{load_config, notes, plan};
+use crate::{load_release_config, notes, plan};
 use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 use std::{
@@ -45,10 +45,11 @@ pub fn check(
         .is_empty(),
         "check requires a clean working tree; commit tracked and untracked changes first"
     );
-    let config = load_config(&root)?;
-    let notes = notes(&root, &config)?;
+    let release_config = load_release_config(&root)?;
+    let config = &release_config.config;
+    let notes = notes(&root, config)?;
     // Also validate version arithmetic, even for exempt PRs.
-    plan(&root, &config, &notes)?;
+    plan(&root, &release_config, &notes)?;
     let reference = String::from_utf8(git(
         &root,
         &[

@@ -1,0 +1,12 @@
+{
+  "packages": {
+    "pkg-node": {
+      "path": "packages/pkg-node",
+      "version_file": "VERSION"
+    },
+    "pkg-python": {
+      "path": "packages/pkg-python",
+      "version_file": "VERSION"
+    }
+  }
+}

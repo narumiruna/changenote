@@ -1,59 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=scripts/action/common.sh
-source "${BASH_SOURCE[0]%/*}/common.sh"
+# shellcheck source=scripts/action/publication.sh
+source "${BASH_SOURCE[0]%/*}/publication.sh"
 setup
 output published false
 output published-packages '[]'
 output release-commit ''
-# Explicit first-parent diffs also select merge commits whose tree matches the PR head.
-release=''
-while IFS= read -r commit; do
-  parent=$(git rev-parse "$commit^" 2>/dev/null || true)
-  if [[ -z $parent || $parent == "$commit^" ]]; then
-    if git cat-file -e "$commit:.changenote/releases.json" 2>/dev/null; then
-      fail 'A release batch in a root commit has no verifiable parent.'
-    fi
-    break
-  fi
-  if ! git diff --quiet "$parent" "$commit" -- .changenote/releases.json; then
-    release=$commit
-    break
-  fi
-done < <(git rev-list --first-parent "$base_sha")
+verify_publication_batch
 [[ -n $release ]] || exit 0
 output release-commit "$release"
-git show "$release:.changenote/releases.json" > "$temp/batch.json" || fail 'Release batch was removed; inspect history manually.'
-jq -e 'type == "array" and length > 0' "$temp/batch.json" >/dev/null || fail 'Invalid or empty release batch.'
-parent=$(git rev-parse "$release^")
-checkout_work "$parent"
-# Reconstruct the version commit from its parent's notes. This validates all fields,
-# bumps, deleted notes, versions, changelogs, paths, and the batch without a new schema.
-"$cli" status > "$temp/expected.json"
-jq -e --slurpfile expected "$temp/expected.json" '. == $expected[0]' "$temp/batch.json" >/dev/null || fail 'Batch does not match the parent release plan.'
-"$cli" version > "$temp/applied.json"
-stage_release "$temp/batch.json"
-if [[ $(git write-tree) != "$(git rev-parse "$release^{tree}")" ]]; then
-  # The old CLI used flat changelogs and two-space JSON. Accept only its
-  # exact generated tree, never arbitrary edits or per-file mixtures.
-  git reset --hard "$parent"
-  "$cli" version --legacy-output > "$temp/applied.json"
-  stage_release "$temp/batch.json"
-  [[ $(git write-tree) == "$(git rev-parse "$release^{tree}")" ]] || fail 'Release commit contains changes beyond the generated release tree (current or legacy output).'
-fi
-git reset --hard "$release"
 # Inspect all remote objects before creating anything. API failure is not absence.
-gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$temp/releases.json"
-while IFS= read -r tag; do
-  remote_tag "$tag"
-  [[ -z $tag_sha || $tag_sha == "$release" ]] || fail "Remote tag points to another commit: $tag"
-  if jq -e --arg tag "$tag" 'any(.[][]; .tag_name == $tag and .draft == true)' "$temp/releases.json" >/dev/null; then
-    fail "Existing release is a draft: $tag"
-  fi
-  if jq -e --arg tag "$tag" 'any(.[][]; .tag_name == $tag)' "$temp/releases.json" >/dev/null; then
-    [[ -n $tag_sha ]] || fail "Existing release has no remote tag: $tag"
-  fi
-done < <(jq -r '.[].tag' "$temp/batch.json")
+inspect_publication
+require_publication_ready
 "$cli" tag
 changed='[]'
 while IFS= read -r item; do
@@ -73,7 +31,7 @@ while IFS= read -r item; do
   remote_tag "$tag"
   [[ $tag_sha == "$release" ]] || fail "Remote tag identity changed: $tag"
   if ! jq -e --arg tag "$tag" 'any(.[][]; .tag_name == $tag)' "$temp/releases.json" >/dev/null; then
-    jq -r '.notes | join("\n\n")' <<< "$item" > "$temp/notes.md"
+    jq -r 'if (.notes | length) == 0 then "Released with its fixed version group; no direct changes." else .notes | join("\n\n") end' <<< "$item" > "$temp/notes.md"
     if gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$tag" --notes-file "$temp/notes.md"; then
       did_publish=true
     else

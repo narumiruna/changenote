@@ -1,0 +1,20 @@
+[
+  {
+    "package": "pkg-node",
+    "old_version": "1.0.0",
+    "version": "1.0.1",
+    "bump": "patch",
+    "tag": "changenote/pkg-node@v1.0.1",
+    "notes": [
+      "Fix output"
+    ]
+  },
+  {
+    "package": "pkg-python",
+    "old_version": "1.0.0",
+    "version": "1.0.1",
+    "bump": "patch",
+    "tag": "changenote/pkg-python@v1.0.1",
+    "notes": []
+  }
+]

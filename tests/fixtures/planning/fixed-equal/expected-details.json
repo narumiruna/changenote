@@ -1,0 +1,48 @@
+[
+  {
+    "package": "pkg-node",
+    "old_version": "1.0.0",
+    "version": "1.0.1",
+    "bump": "patch",
+    "tag": "changenote/pkg-node@v1.0.1",
+    "notes": [
+      "Fix output"
+    ],
+    "note_paths": [
+      ".changenote/fix.md"
+    ],
+    "fixed_group": {
+      "members": [
+        "pkg-node",
+        "pkg-python"
+      ],
+      "base_version": "1.0.0",
+      "source_note_paths": [
+        ".changenote/fix.md"
+      ]
+    },
+    "note_bumps": [
+      "patch"
+    ]
+  },
+  {
+    "package": "pkg-python",
+    "old_version": "1.0.0",
+    "version": "1.0.1",
+    "bump": "patch",
+    "tag": "changenote/pkg-python@v1.0.1",
+    "notes": [],
+    "note_paths": [],
+    "fixed_group": {
+      "members": [
+        "pkg-node",
+        "pkg-python"
+      ],
+      "base_version": "1.0.0",
+      "source_note_paths": [
+        ".changenote/fix.md"
+      ]
+    },
+    "note_bumps": []
+  }
+]

@@ -24,7 +24,7 @@ enum Commands {
     },
     /// Add a Markdown note without an interactive prompt.
     Add {
-        name: String,
+        name: Option<String>,
         /// Shared-bump mode; cannot be combined with --major/--minor/--patch.
         #[arg(short, long, requires = "bump", conflicts_with_all = ["major", "minor", "patch"])]
         package: Vec<String>,
@@ -47,6 +47,9 @@ enum Commands {
         /// Include the bump for each note in the JSON output.
         #[arg(long)]
         include_note_bumps: bool,
+        /// Include direct note paths and fixed-group causes in the JSON output.
+        #[arg(long)]
+        include_note_paths: bool,
     },
     /// Check committed PR changes against a merge base; requires a clean Git tree.
     /// This is a PR-level note check, not per-package coverage. Prints JSON; writes no files.
@@ -90,22 +93,31 @@ fn run() -> Result<()> {
             ] {
                 changes.extend(packages.into_iter().map(|p| (p, bump)));
             }
-            println!(
-                "{}",
-                changenote::add_with_bumps(&cli.root, &name, changes, &message)?.display()
-            );
-        }
-        Commands::Status { include_note_bumps } => {
-            let releases = changenote::status(&cli.root)?;
-            if include_note_bumps {
-                let mut plan = serde_json::to_value(&releases)?;
-                for (entry, release) in plan.as_array_mut().unwrap().iter_mut().zip(&releases) {
-                    entry["note_bumps"] = serde_json::to_value(&release.note_bumps)?;
-                }
-                println!("{}", serde_json::to_string_pretty(&plan)?);
+            let path = if let Some(name) = name {
+                changenote::add_with_bumps(&cli.root, &name, changes, &message)?
             } else {
-                println!("{}", serde_json::to_string_pretty(&releases)?);
+                changenote::add_generated(&cli.root, changes, &message)?
+            };
+            println!("{}", path.display());
+        }
+        Commands::Status {
+            include_note_bumps,
+            include_note_paths,
+        } => {
+            let details = changenote::status_with_note_paths(&cli.root)?;
+            let mut output = Vec::new();
+            for detail in details {
+                let mut entry = if include_note_paths {
+                    serde_json::to_value(&detail)?
+                } else {
+                    serde_json::to_value(&detail.release)?
+                };
+                if include_note_bumps {
+                    entry["note_bumps"] = serde_json::to_value(&detail.release.note_bumps)?;
+                }
+                output.push(entry);
             }
+            println!("{}", serde_json::to_string_pretty(&output)?);
         }
         Commands::Check {
             since,

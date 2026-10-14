@@ -32,6 +32,11 @@ class Metadata(unittest.TestCase):
                 "publish",
                 {"release-commit", "published", "published-packages"},
             ),
+            (
+                ROOT / "preview/action.yml",
+                "preview",
+                {"release-commit", "ready", "publication-plan"},
+            ),
         ):
             metadata = read_yaml(action)
             self.assertEqual(metadata["runs"]["using"], "composite")
@@ -58,6 +63,14 @@ class Metadata(unittest.TestCase):
                 line.split("=", 1) for line in output.read_text().splitlines()
             )
             self.assertEqual(set(actual), expected)
+            if step == "preview":
+                self.assertEqual(actual["ready"], "true")
+                self.assertEqual(actual["release-commit"], "")
+                self.assertEqual(actual["publication-plan"], "[]")
+                self.assertEqual(
+                    metadata["inputs"]["github-token"]["description"],
+                    "Token with contents read permission.",
+                )
             self.assertFalse((fixture.repo / "scripts/action").exists())
 
     def test_triggers_concurrency_and_permissions(self):
@@ -136,8 +149,12 @@ class Metadata(unittest.TestCase):
         )
         self.assertEqual(prepare_dist["shell"], "bash")
         self.assertEqual(prepare_dist["run"], "mkdir -p source/dist")
-        self.assertLess(wheels["steps"].index(prepare_dist), wheels["steps"].index(build))
-        self.assertLess(wheels["steps"].index(prepare_dist), wheels["steps"].index(sdist))
+        self.assertLess(
+            wheels["steps"].index(prepare_dist), wheels["steps"].index(build)
+        )
+        self.assertLess(
+            wheels["steps"].index(prepare_dist), wheels["steps"].index(sdist)
+        )
         pypi = jobs["pypi"]
         self.assertEqual(pypi["needs"], ["publish", "wheels"])
         self.assertIn("needs.wheels.result == 'success'", pypi["if"])
@@ -157,8 +174,13 @@ class Metadata(unittest.TestCase):
         self.assertEqual(check["permissions"], {"contents": "read"})
         self.assertEqual(check["steps"][0]["with"]["fetch-depth"], "0")
         self.assertEqual(check["steps"][0]["with"]["persist-credentials"], "false")
-        self.assertEqual(check["steps"][-1]["env"]["BASE_BRANCH"], "${{ github.base_ref }}")
-        self.assertEqual(check["steps"][-1]["run"], 'changenote check --since "refs/remotes/origin/$BASE_BRANCH"')
+        self.assertEqual(
+            check["steps"][-1]["env"]["BASE_BRANCH"], "${{ github.base_ref }}"
+        )
+        self.assertEqual(
+            check["steps"][-1]["run"],
+            'changenote check --since "refs/remotes/origin/$BASE_BRANCH"',
+        )
         self.assertEqual(workflow["permissions"], {"contents": "read"})
         self.assertEqual(
             workflow["jobs"]["release"]["permissions"],
@@ -175,7 +197,24 @@ class Metadata(unittest.TestCase):
             workflow["jobs"]["publish"]["steps"][-1]["uses"],
             "narumiruna/changenote/publish@<full-action-commit-sha>",
         )
-        for path in (ROOT / "action.yml", ROOT / "publish/action.yml"):
+        preview = next(
+            example
+            for example in examples
+            if example.get("name") == "Publication preview"
+        )
+        self.assertEqual(preview["permissions"], {"contents": "read"})
+        self.assertEqual(
+            preview["jobs"]["preview"]["steps"][-1]["uses"],
+            "narumiruna/changenote/preview@<full-action-commit-sha>",
+        )
+        self.assertNotIn(
+            "preview", read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]
+        )
+        for path in (
+            ROOT / "action.yml",
+            ROOT / "publish/action.yml",
+            ROOT / "preview/action.yml",
+        ):
             action = read_yaml(path)
             for key in (*action["inputs"], *action["outputs"]):
                 self.assertIn("`" + key + "`", readme)

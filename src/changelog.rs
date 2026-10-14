@@ -8,6 +8,9 @@ pub(crate) fn render(release: &Release, old: &str, legacy: bool) -> String {
         entry.push_str("\n\n");
         return format!("{entry}{old}");
     }
+    if release.notes.is_empty() {
+        entry.push_str("Released with its fixed version group; no direct changes.\n\n");
+    }
     for (bump, heading) in [
         (Bump::Major, "Major"),
         (Bump::Minor, "Minor"),
