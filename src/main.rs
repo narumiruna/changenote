@@ -41,6 +41,9 @@ enum Commands {
         patch: Vec<String>,
         #[arg(short, long)]
         message: String,
+        /// Classify this note independently of its SemVer bump.
+        #[arg(long = "type")]
+        kind: Option<String>,
     },
     /// Print the pending release plan as JSON without changing files.
     Status {
@@ -50,6 +53,12 @@ enum Commands {
         /// Include direct note paths and fixed-group causes in the JSON output.
         #[arg(long)]
         include_note_paths: bool,
+        /// Include the type for each direct note, or null for untyped notes.
+        #[arg(long)]
+        include_note_types: bool,
+        /// Include nonempty changelog sections in output order.
+        #[arg(long)]
+        include_note_sections: bool,
     },
     /// Check committed PR changes against a merge base; requires a clean Git tree.
     /// This is a PR-level note check, not per-package coverage. Prints JSON; writes no files.
@@ -94,6 +103,7 @@ fn run() -> Result<()> {
             minor,
             patch,
             message,
+            kind,
         } => {
             let mut changes: Vec<_> = package.into_iter().map(|p| (p, bump.unwrap())).collect();
             for (packages, bump) in [
@@ -104,26 +114,34 @@ fn run() -> Result<()> {
                 changes.extend(packages.into_iter().map(|p| (p, bump)));
             }
             let path = if let Some(name) = name {
-                changenote::add_with_bumps(&cli.root, &name, changes, &message)?
+                changenote::add_with_type(&cli.root, &name, changes, &message, kind.as_deref())?
             } else {
-                changenote::add_generated(&cli.root, changes, &message)?
+                changenote::add_generated_with_type(&cli.root, changes, &message, kind.as_deref())?
             };
             println!("{}", path.display());
         }
         Commands::Status {
             include_note_bumps,
             include_note_paths,
+            include_note_types,
+            include_note_sections,
         } => {
-            let details = changenote::status_with_note_paths(&cli.root)?;
+            let details = changenote::status_with_note_sections(&cli.root)?;
             let mut output = Vec::new();
             for detail in details {
                 let mut entry = if include_note_paths {
-                    serde_json::to_value(&detail)?
+                    serde_json::to_value(&detail.detail)?
                 } else {
-                    serde_json::to_value(&detail.release)?
+                    serde_json::to_value(&detail.detail.release)?
                 };
                 if include_note_bumps {
-                    entry["note_bumps"] = serde_json::to_value(&detail.release.note_bumps)?;
+                    entry["note_bumps"] = serde_json::to_value(&detail.detail.release.note_bumps)?;
+                }
+                if include_note_types {
+                    entry["note_types"] = serde_json::to_value(&detail.note_types)?;
+                }
+                if include_note_sections {
+                    entry["note_sections"] = serde_json::to_value(&detail.note_sections)?;
                 }
                 output.push(entry);
             }

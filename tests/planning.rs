@@ -91,6 +91,15 @@ fn public_layout_signatures_and_serialization_remain_compatible() {
         notes: vec!["Same summary".into()],
         note_bumps: vec![Bump::Patch],
     };
+    let _note = changenote::Note {
+        packages: BTreeMap::from([("a".into(), Bump::Patch)]),
+        summary: "Same summary".into(),
+    };
+    let _detail = changenote::DetailedRelease {
+        release: release.clone(),
+        note_paths: vec![".changenote/one.md".into()],
+        fixed_group: None,
+    };
     let _add = add as fn(&Path, &str, Vec<String>, Bump, &str) -> anyhow::Result<PathBuf>;
     let _mixed =
         add_with_bumps as fn(&Path, &str, Vec<(String, Bump)>, &str) -> anyhow::Result<PathBuf>;

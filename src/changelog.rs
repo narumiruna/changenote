@@ -1,8 +1,21 @@
-use crate::{Bump, Release};
+#[cfg(test)]
+use crate::Bump;
+use crate::Release;
 use anyhow::{Result, ensure};
 use semver::Version;
 
-pub(crate) fn render(release: &Release, old: &str, legacy: bool) -> String {
+#[cfg(test)]
+fn render(release: &Release, old: &str, legacy: bool) -> String {
+    let sections = crate::sections::group(release, &[], None);
+    render_sections(release, old, legacy, &sections)
+}
+
+pub(crate) fn render_sections(
+    release: &Release,
+    old: &str,
+    legacy: bool,
+    sections: &[crate::NoteSection],
+) -> String {
     let mut entry = format!("## {}\n\n", release.version);
     if legacy {
         entry.push_str(&items(release.notes.iter().map(String::as_str)));
@@ -12,24 +25,12 @@ pub(crate) fn render(release: &Release, old: &str, legacy: bool) -> String {
     if release.notes.is_empty() {
         entry.push_str("Released with its fixed version group; no direct changes.\n\n");
     }
-    for (bump, heading) in [
-        (Bump::Major, "Major"),
-        (Bump::Minor, "Minor"),
-        (Bump::Patch, "Patch"),
-    ] {
-        let notes: Vec<_> = release
-            .notes
-            .iter()
-            .zip(&release.note_bumps)
-            .filter(|(_, b)| **b == bump)
-            .map(|(n, _)| n.as_str())
-            .collect();
-        if !notes.is_empty() {
-            entry.push_str(&format!(
-                "### {heading} Changes\n\n{}\n\n",
-                items(notes.into_iter())
-            ));
-        }
+    for section in sections {
+        entry.push_str(&format!(
+            "### {}\n\n{}\n\n",
+            section.title,
+            items(section.notes.iter().map(String::as_str))
+        ));
     }
     let index = first_version_heading(old).unwrap_or(old.len());
     let (prefix, suffix) = old.split_at(index);

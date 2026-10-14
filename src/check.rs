@@ -47,7 +47,7 @@ pub fn check(
     );
     let release_config = load_release_config(&root)?;
     let config = &release_config.config;
-    let notes = notes(&root, config)?;
+    let notes = notes(&root, &release_config)?;
     // Also validate version arithmetic, even for exempt PRs.
     plan(&root, &release_config, &notes)?;
     let reference = String::from_utf8(git(

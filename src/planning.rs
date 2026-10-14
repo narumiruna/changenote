@@ -1,5 +1,5 @@
 use crate::version_file::read_version;
-use crate::{Bump, Note, Release, ReleaseConfig, load_release_config, notes};
+use crate::{Bump, NoteData, NoteSection, Release, ReleaseConfig, load_release_config, notes};
 use anyhow::{Context, Result};
 use semver::Version;
 use serde::{Serialize, Serializer, ser::Error};
@@ -19,6 +19,19 @@ pub struct DetailedRelease {
     pub fixed_group: Option<FixedGroup>,
 }
 
+/// A release with direct note provenance and planned changelog sections.
+#[derive(Debug, Serialize)]
+pub struct SectionedRelease {
+    #[serde(flatten)]
+    pub detail: DetailedRelease,
+    /// Type for each direct summary; omitted from default JSON.
+    #[serde(skip)]
+    pub note_types: Vec<Option<String>>,
+    /// Nonempty sections in changelog output order; omitted from default JSON.
+    #[serde(skip)]
+    pub note_sections: Vec<NoteSection>,
+}
+
 /// Cause of a fixed-group release; source paths are not direct package notes.
 #[derive(Debug, Clone, Serialize)]
 pub struct FixedGroup {
@@ -29,8 +42,15 @@ pub struct FixedGroup {
 }
 
 pub fn status_with_note_paths(root: &Path) -> Result<Vec<DetailedRelease>> {
+    Ok(status_with_note_sections(root)?
+        .into_iter()
+        .map(|r| r.detail)
+        .collect())
+}
+
+pub fn status_with_note_sections(root: &Path) -> Result<Vec<SectionedRelease>> {
     let config = load_release_config(root)?;
-    plan(root, &config, &notes(root, &config.config)?)
+    plan(root, &config, &notes(root, &config)?)
 }
 
 fn bump_version(mut version: Version, bump: Bump) -> Result<Version> {
@@ -54,8 +74,8 @@ fn bump_version(mut version: Version, bump: Bump) -> Result<Version> {
 pub(crate) fn plan(
     root: &Path,
     config: &ReleaseConfig,
-    notes: &[(PathBuf, Note)],
-) -> Result<Vec<DetailedRelease>> {
+    notes: &[(PathBuf, NoteData)],
+) -> Result<Vec<SectionedRelease>> {
     let versions = config
         .config
         .packages
@@ -117,17 +137,28 @@ pub(crate) fn plan(
             } else {
                 format!("changenote/{name}@v{version}")
             };
-            DetailedRelease {
-                note_paths: direct.iter().map(|(p, _, _)| relative_note(p)).collect(),
-                fixed_group,
-                release: Release {
-                    old_version: versions[&name].clone(),
-                    package: name,
-                    version,
-                    bump,
-                    tag,
-                    notes: direct.iter().map(|(_, n, _)| n.summary.clone()).collect(),
-                    note_bumps: direct.iter().map(|(_, _, b)| *b).collect(),
+            let note_types = direct
+                .iter()
+                .map(|(_, n, _)| n.kind.clone())
+                .collect::<Vec<_>>();
+            let release = Release {
+                old_version: versions[&name].clone(),
+                package: name,
+                version,
+                bump,
+                tag,
+                notes: direct.iter().map(|(_, n, _)| n.summary.clone()).collect(),
+                note_bumps: direct.iter().map(|(_, _, b)| *b).collect(),
+            };
+            let note_sections =
+                crate::sections::group(&release, &note_types, config.changelog.as_ref());
+            SectionedRelease {
+                note_types,
+                note_sections,
+                detail: DetailedRelease {
+                    note_paths: direct.iter().map(|(p, _, _)| relative_note(p)).collect(),
+                    fixed_group,
+                    release,
                 },
             }
         })

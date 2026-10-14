@@ -1,9 +1,14 @@
 mod changelog;
+mod sections;
+pub use sections::NoteSection;
 mod generated;
 mod planning;
-pub use generated::add_generated;
+pub use generated::{add_generated, add_generated_with_type};
 mod check;
-pub use planning::{DetailedRelease, FixedGroup, status_with_note_paths};
+pub use planning::{
+    DetailedRelease, FixedGroup, SectionedRelease, status_with_note_paths,
+    status_with_note_sections,
+};
 mod json_value;
 pub use check::{CheckReport, check};
 mod lockfile;
@@ -52,7 +57,7 @@ pub struct Note {
     pub summary: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Release {
     pub package: String,
     pub old_version: Version,
@@ -153,14 +158,28 @@ struct ConfigFile {
     packages: BTreeMap<String, Package>,
     #[serde(default)]
     fixed: Vec<Vec<String>>,
+    changelog: Option<sections::ChangelogConfig>,
 }
 
 struct ReleaseConfig {
     config: Config,
     fixed: Vec<Vec<String>>,
+    changelog: Option<sections::ChangelogConfig>,
 }
 
-/// Validate all configuration, including fixed groups, and return package settings.
+struct NoteData {
+    note: Note,
+    kind: Option<String>,
+}
+
+impl std::ops::Deref for NoteData {
+    type Target = Note;
+    fn deref(&self) -> &Note {
+        &self.note
+    }
+}
+
+/// Validate all configuration, including fixed groups and sections, and return package settings.
 pub fn load_config(root: &Path) -> Result<Config> {
     Ok(load_release_config(root)?.config)
 }
@@ -168,6 +187,9 @@ pub fn load_config(root: &Path) -> Result<Config> {
 fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
     let path = checked_path(root, Path::new(".changenote/config.json"))?;
     let file: ConfigFile = serde_json::from_str(&fs::read_to_string(path)?)?;
+    if let Some(changelog) = &file.changelog {
+        changelog.validate()?;
+    }
     let config = Config {
         schema: file.schema,
         packages: file.packages,
@@ -240,10 +262,15 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
     Ok(ReleaseConfig {
         config,
         fixed: file.fixed,
+        changelog: file.changelog,
     })
 }
 
 pub fn parse_note(content: &str) -> Result<Note> {
+    Ok(parse_note_data(content)?.note)
+}
+
+fn parse_note_data(content: &str) -> Result<NoteData> {
     let normalized = content.replace("\r\n", "\n");
     let mut lines = normalized.lines();
     ensure!(lines.next() == Some("---"), "note must start with ---");
@@ -259,15 +286,28 @@ pub fn parse_note(content: &str) -> Result<Note> {
     }
     ensure!(closed, "missing closing frontmatter delimiter");
     // Value rejects duplicate YAML keys before conversion to a map.
-    let value: serde_yaml::Value = serde_yaml::from_str(&yaml)?;
+    let mut value: serde_yaml::Value = serde_yaml::from_str(&yaml)?;
+    let mapping = value
+        .as_mapping_mut()
+        .context("note frontmatter must be a mapping")?;
+    let kind: Option<String> = mapping
+        .remove(serde_yaml::Value::String("$type".into()))
+        .map(serde_yaml::from_value)
+        .transpose()?;
+    if let Some(kind) = &kind {
+        safe_name(kind)?;
+    }
     let packages: BTreeMap<String, Bump> = serde_yaml::from_value(value)?;
     ensure!(!packages.is_empty(), "note must name at least one package");
     let summary = lines.collect::<Vec<_>>().join("\n").trim().to_owned();
     ensure!(!summary.is_empty(), "note summary cannot be empty");
-    Ok(Note { packages, summary })
+    Ok(NoteData {
+        note: Note { packages, summary },
+        kind,
+    })
 }
 
-fn notes(root: &Path, config: &Config) -> Result<Vec<(PathBuf, Note)>> {
+fn notes(root: &Path, config: &ReleaseConfig) -> Result<Vec<(PathBuf, NoteData)>> {
     let directory = checked_path(root, Path::new(".changenote"))?;
     let mut paths = fs::read_dir(directory)?
         .map(|e| e.map(|e| e.path()))
@@ -288,11 +328,14 @@ fn notes(root: &Path, config: &Config) -> Result<Vec<(PathBuf, Note)>> {
             !fs::symlink_metadata(&path)?.file_type().is_symlink(),
             "note cannot be a symlink"
         );
-        let note = parse_note(&fs::read_to_string(&path)?)
+        let note = parse_note_data(&fs::read_to_string(&path)?)
             .with_context(|| format!("invalid note {}", path.display()))?;
+        if let (Some(changelog), Some(kind)) = (&config.changelog, &note.kind) {
+            changelog.validate_type(kind)?;
+        }
         for name in note.packages.keys() {
             ensure!(
-                config.packages.contains_key(name),
+                config.config.packages.contains_key(name),
                 "unknown package {name} in {}",
                 path.display()
             );
@@ -302,16 +345,20 @@ fn notes(root: &Path, config: &Config) -> Result<Vec<(PathBuf, Note)>> {
     Ok(result)
 }
 
-fn plan(root: &Path, config: &ReleaseConfig, notes: &[(PathBuf, Note)]) -> Result<Vec<Release>> {
+fn plan(
+    root: &Path,
+    config: &ReleaseConfig,
+    notes: &[(PathBuf, NoteData)],
+) -> Result<Vec<Release>> {
     Ok(planning::plan(root, config, notes)?
         .into_iter()
-        .map(|r| r.release)
+        .map(|r| r.detail.release)
         .collect())
 }
 
 pub fn status(root: &Path) -> Result<Vec<Release>> {
     let config = load_release_config(root)?;
-    plan(root, &config, &notes(root, &config.config)?)
+    plan(root, &config, &notes(root, &config)?)
 }
 
 pub fn init(root: &Path, name: &str, version: Version) -> Result<()> {
@@ -372,6 +419,17 @@ pub fn add_with_bumps(
     packages: Vec<(String, Bump)>,
     message: &str,
 ) -> Result<PathBuf> {
+    add_with_type(root, name, packages, message, None)
+}
+
+/// Create a named note with independent package bumps and optional classification.
+pub fn add_with_type(
+    root: &Path,
+    name: &str,
+    packages: Vec<(String, Bump)>,
+    message: &str,
+    kind: Option<&str>,
+) -> Result<PathBuf> {
     safe_name(name)?;
     ensure!(
         !["README", "AGENTS", "CLAUDE", "GEMINI"]
@@ -379,7 +437,7 @@ pub fn add_with_bumps(
             .any(|n| name.eq_ignore_ascii_case(n)),
         "reserved note name"
     );
-    let content = note_content(root, packages, message)?;
+    let content = note_content(root, packages, message, kind)?;
     Ok(write_note(root, name, &content)?)
 }
 
@@ -393,12 +451,24 @@ fn write_note(root: &Path, name: &str, content: &str) -> std::io::Result<PathBuf
     Ok(path)
 }
 
-fn note_content(root: &Path, packages: Vec<(String, Bump)>, message: &str) -> Result<String> {
+fn note_content(
+    root: &Path,
+    packages: Vec<(String, Bump)>,
+    message: &str,
+    kind: Option<&str>,
+) -> Result<String> {
     ensure!(
         !packages.is_empty() && !message.trim().is_empty(),
         "packages and message are required"
     );
-    let config = load_config(root)?;
+    let release_config = load_release_config(root)?;
+    if let Some(kind) = kind {
+        safe_name(kind)?;
+        if let Some(changelog) = &release_config.changelog {
+            changelog.validate_type(kind)?;
+        }
+    }
+    let config = release_config.config;
     let mut changes = BTreeMap::new();
     for (pkg, bump) in packages {
         ensure!(config.packages.contains_key(&pkg), "unknown package {pkg}");
@@ -406,9 +476,16 @@ fn note_content(root: &Path, packages: Vec<(String, Bump)>, message: &str) -> Re
             ensure!(previous == bump, "conflicting bumps for package {pkg}");
         }
     }
+    let mut metadata = serde_yaml::to_value(&changes)?;
+    if let Some(kind) = kind {
+        metadata.as_mapping_mut().unwrap().insert(
+            serde_yaml::Value::String("$type".into()),
+            serde_yaml::Value::String(kind.into()),
+        );
+    }
     Ok(format!(
         "---\n{}---\n\n{}\n",
-        serde_yaml::to_string(&changes)?,
+        serde_yaml::to_string(&metadata)?,
         message.trim()
     ))
 }
@@ -432,8 +509,9 @@ pub fn version_with_output(
     sync_lockfiles: bool,
 ) -> Result<Vec<Release>> {
     let release_config = load_release_config(root)?;
-    let notes = notes(root, &release_config.config)?;
-    let releases = plan(root, &release_config, &notes)?;
+    let notes = notes(root, &release_config)?;
+    let details = planning::plan(root, &release_config, &notes)?;
+    let releases: Vec<_> = details.iter().map(|d| d.detail.release.clone()).collect();
     ensure!(
         !legacy
             || !releases
@@ -453,7 +531,8 @@ pub fn version_with_output(
     };
     let mut writes = Vec::new();
     let mut manifests = Vec::new();
-    for release in &releases {
+    for detail in &details {
+        let release = &detail.detail.release;
         let pkg = &config.packages[&release.package];
         let path = checked_path(root, &pkg.path.join("CHANGELOG.md"))?;
         let old = if path.exists() {
@@ -461,7 +540,10 @@ pub fn version_with_output(
         } else {
             String::new()
         };
-        writes.push((path, changelog::render(release, &old, legacy)));
+        writes.push((
+            path,
+            changelog::render_sections(release, &old, legacy, &detail.note_sections),
+        ));
         let version_path = checked_path(root, &pkg.path.join(&pkg.version_file))?;
         let content = version_content(&version_path, &release.version, legacy)?;
         manifests.push((version_path, content));
