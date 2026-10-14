@@ -1,12 +1,9 @@
 [
   {
     "package": "changenote",
-    "old_version": "0.4.0",
-    "version": "0.4.1",
-    "bump": "patch",
-    "tag": "v0.4.1",
-    "notes": [
-      "Only publish automatically after a managed Release PR merge; keep ordinary pushes limited to PR management and require an explicit operation for publication retries. Validate the selected batch again before remote writes."
-    ]
+    "old_version": "0.4.1",
+    "version": "0.5.0",
+    "bump": "minor",
+    "tag": "v0.5.0"
   }
 ]
