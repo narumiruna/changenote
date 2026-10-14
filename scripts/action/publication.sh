@@ -28,15 +28,23 @@ verify_publication_batch() {
   # bumps, deleted notes, versions, changelogs, paths, and the batch without a new schema.
   "$cli" status > "$temp/expected.json"
   jq -e --slurpfile expected "$temp/expected.json" '. == $expected[0]' "$temp/batch.json" >/dev/null || fail 'Batch does not match the parent release plan.'
-  "$cli" version > "$temp/applied.json"
-  stage_release "$temp/batch.json"
-  if [[ $(git write-tree) != "$(git rev-parse "$release^{tree}")" ]]; then
-    # The old CLI used flat changelogs and two-space JSON. Accept only its
-    # exact generated tree, never arbitrary edits or per-file mixtures.
-    git reset --hard "$parent"
-    "$cli" version --legacy-output > "$temp/applied.json"
+  local generated=''
+  if "$cli" version > "$temp/applied.json"; then
     stage_release "$temp/batch.json"
-    [[ $(git write-tree) == "$(git rev-parse "$release^{tree}")" ]] || fail 'Release commit contains changes beyond the generated release tree (current or legacy output).'
+    generated=$(git write-tree)
+  fi
+  if [[ $generated != "$(git rev-parse "$release^{tree}")" ]]; then
+    # Earlier releases did not refresh lockfiles. Accept only a complete profile.
+    git reset --hard "$parent"
+    "$cli" version --no-lockfiles > "$temp/applied.json"
+    stage_release "$temp/batch.json"
+    if [[ $(git write-tree) != "$(git rev-parse "$release^{tree}")" ]]; then
+      # The oldest CLI used flat changelogs and two-space JSON.
+      git reset --hard "$parent"
+      "$cli" version --legacy-output > "$temp/applied.json"
+      stage_release "$temp/batch.json"
+      [[ $(git write-tree) == "$(git rev-parse "$release^{tree}")" ]] || fail 'Release commit contains changes beyond the generated release tree (current or legacy output).'
+    fi
   fi
   git reset --hard "$release"
 }

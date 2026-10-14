@@ -67,6 +67,9 @@ enum Commands {
         /// Reconstruct older release trees. Reserved for the publication Action.
         #[arg(long, hide = true)]
         legacy_output: bool,
+        /// Reconstruct releases made before lockfile synchronization.
+        #[arg(long, hide = true)]
+        no_lockfiles: bool,
     },
     /// Create local annotated tags for the committed release plan.
     Tag,
@@ -131,11 +134,15 @@ fn run() -> Result<()> {
                 "changed packages have no PR note; add a note or use --skip-release --reason"
             );
         }
-        Commands::Version { legacy_output } => println!(
+        Commands::Version {
+            legacy_output,
+            no_lockfiles,
+        } => println!(
             "{}",
-            serde_json::to_string_pretty(&changenote::version_with_legacy_output(
+            serde_json::to_string_pretty(&changenote::version_with_output(
                 &cli.root,
-                legacy_output
+                legacy_output,
+                !legacy_output && !no_lockfiles
             )?)?
         ),
         Commands::Tag => {

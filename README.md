@@ -2,7 +2,7 @@
 
 A Rust CLI for language-independent change notes, SemVer versions, changelogs, and release tags. Inspired by [Changesets](https://github.com/changesets/changesets).
 
-Each package has an explicit directory and a version file: a package manifest or a plain-text file. No language runtime or package manager is required after the CLI is built.
+Each package has an explicit directory and a version file: a package manifest or a plain-text file. Plain-text version files need no language runtime or package manager. Manifest releases with an existing supported lockfile need the corresponding package manager.
 
 ## Install
 
@@ -93,7 +93,23 @@ Packages in any language can use a plain-text `VERSION` file, including Python, 
 | `package.json` | Top-level `version` |
 | Other filenames, including `VERSION` | Plain-text stable SemVer string |
 
-Manifest versions must be explicit strings. Dynamic Python versions, Poetry-only versions, and inherited Cargo workspace versions are not supported. TOML comments and unrelated fields are preserved. JSON updates replace only the top-level version value token. Every other byte is preserved, including indentation, line endings, field order, number spelling, and the presence or absence of a final newline. Duplicate top-level version keys, including escaped spellings of the same key, are rejected. Lockfiles and dependency versions are not updated. `init` still creates a plain-text `VERSION`; configure existing manifests manually.
+Manifest versions must be explicit strings. Dynamic Python versions, Poetry-only versions, and inherited Cargo workspace versions are not supported. TOML comments and unrelated fields are preserved. JSON updates replace only the top-level version value token. Every other byte is preserved, including indentation, line endings, field order, number spelling, and the presence or absence of a final newline. Duplicate top-level version keys, including escaped spellings of the same key, are rejected. Dependency requirements are not updated. `init` still creates a plain-text `VERSION`; configure existing manifests manually.
+
+### Automatic lockfile synchronization
+
+`version` refreshes an existing lockfile for each changed configured manifest:
+
+| Manifest | Lockfile | Command |
+| --- | --- | --- |
+| `Cargo.toml` | `Cargo.lock` | `cargo update --workspace --offline` |
+| `pyproject.toml` | `uv.lock` | `uv lock --offline` |
+| `package.json` | `package-lock.json` | `npm install --package-lock-only --ignore-scripts --offline --no-audit --no-fund` |
+
+The CLI checks the manifest directory, then its ancestors up to the repository root, and uses the nearest matching lockfile. This supports shared workspace lockfiles. The owning manifest must exist beside the lockfile. All release manifests are updated before any command runs; each shared lockfile is refreshed once. Lockfile symlinks and paths outside the repository are rejected. Plain-text version files do not trigger synchronization. No lockfile is created when no matching file exists. Yarn, pnpm, and npm shrinkwrap files are not supported.
+
+Install the required package manager and populate its cache before running `version`. Commands run offline without upgrade flags; npm lifecycle scripts are disabled and dependencies are not installed. Existing dependency resolutions are retained where the package manager permits. `status`, `add`, and a `version` run without pending notes do not run package managers.
+
+If a command is missing or fails, the CLI restores all changed manifest and lockfile bytes. Changelogs, saved release data, and notes stay unchanged. Filesystem failures can still require Git recovery. Review all outputs before committing. Upgrade the CLI and Actions together: Release PRs stage these lockfiles, and publication reconstructs them with the same commands. Replay therefore needs compatible package-manager versions and cached dependencies. Older release trees without lockfile updates remain supported.
 
 One note can name multiple packages with different bumps:
 
@@ -155,7 +171,7 @@ When any member has a pending note, the planner takes the highest current versio
 
 Direct summaries, their bumps, and their paths stay with the named package. A propagated member has empty `notes` and direct `note_paths`. Detailed status adds `fixed_group` with sorted `members`, `base_version`, and filename-ordered `source_note_paths` for all notes that activate the group. Those sources are not direct package notes. Rust callers can use `status_with_note_paths()` without changing the existing `status()` API or public struct layouts.
 
-All member version files, changelogs, and tags are release outputs. A member without direct notes gets the text “Released with its fixed version group; no direct changes.” in its changelog, Release PR, and GitHub Release. Dependency ranges and lockfiles remain unchanged. Upgrade CLI and Actions together before using fixed config; older CLIs reject it.
+All member version files, changelogs, and tags are release outputs. A member without direct notes gets the text “Released with its fixed version group; no direct changes.” in its changelog, Release PR, and GitHub Release. Dependency ranges remain unchanged; supported existing lockfiles are synchronized. Upgrade CLI and Actions together before using fixed config; older CLIs reject it.
 
 ## Check PR notes
 
@@ -201,7 +217,7 @@ This repository provides three reusable composite Actions:
 - `narumiruna/changenote/publish@<full-commit-sha>`: publish annotated tags and GitHub Releases.
 - `narumiruna/changenote/preview@<full-commit-sha>`: inspect publication state without source or remote writes.
 
-The PR and publication Actions require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `changenote` executable on `PATH`. Ubuntu GitHub-hosted runners include the non-CLI tools. Package version files, changelogs, and `.changenote/releases.json` must not be symlinks. Both writing Actions check the batch path before CLI writes. Run at the repository root; the Actions load their scripts from the Action checkout, not the consumer repository. They do not install the CLI or publish registries. The CLI updates configured version files only; it does not synchronize other manifests or lockfiles.
+The PR and publication Actions require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `changenote` executable on `PATH`. Ubuntu GitHub-hosted runners include the non-CLI tools. Package version files, lockfiles, changelogs, and `.changenote/releases.json` must not be symlinks. Both writing Actions check the batch path before CLI writes. Run at the repository root; the Actions load their scripts from the Action checkout, not the consumer repository. They do not install the CLI or publish registries. The CLI updates configured version files and supported existing lockfiles; it does not synchronize other manifests. Manifest releases also need the package managers and cached dependencies listed above.
 
 ### Release PR workflow
 
@@ -304,7 +320,7 @@ The automatic workflow above runs publication after PR management. Publication c
 
 To retry a partial publication failure, run **Release** manually on `main`. This runs both PR management and publication again. They use one workflow concurrency group, so no separate retry workflow is needed. Keep required publication steps in this workflow: tags pushed with `GITHUB_TOKEN` do not trigger other push workflows.
 
-Publication selects the latest first-parent commit that changes `.changenote/releases.json`. It reconstructs that commit from the parent's notes and compares the complete generated tree before publication. The publication Action first checks current output, then the exact legacy output (flat changelogs prepended before titles and two-space JSON with a final newline). Mixed output profiles and arbitrary edits are rejected. Legacy replay rejects active fixed-group plans because older writers did not support them. The hidden `version --legacy-output` option is reserved for this reconstruction in a temporary Action worktree; do not use it for new releases. Upgrade CLI and Action pins together. Older Actions do not support this fallback. Standard merge, squash, and rebase merges are supported. A later unrelated commit or new pending notes do not change the release target.
+Publication selects the latest first-parent commit that changes `.changenote/releases.json`. It reconstructs that commit from the parent's notes and compares the complete generated tree before publication. The publication Action first checks current output, then the previous output without lockfile synchronization, then the exact legacy output (flat changelogs prepended before titles and two-space JSON with a final newline). Mixed output profiles and arbitrary edits are rejected. Legacy replay rejects active fixed-group plans because older writers did not support them. The hidden `version --no-lockfiles` and `version --legacy-output` options are reserved for this reconstruction in a temporary Action worktree; do not use it for new releases. Upgrade CLI and Action pins together. Older Actions do not support this fallback. Standard merge, squash, and rebase merges are supported. A later unrelated commit or new pending notes do not change the release target.
 
 Existing remote tags must point to the selected commit. Missing tags and GitHub Releases are created; existing release text is not replaced. Draft releases, missing tags for existing releases, malformed batches, batch deletion, manually edited release trees, and tag conflicts stop publication. A batch in a root commit cannot be verified. No batch is a no-op.
 
@@ -335,7 +351,7 @@ Before production use, verify repository permissions, branch rules, and App-toke
 
 ## Scope and safety
 
-- Configured version files are the release version source and must contain a stable SemVer version in the field listed above. Only configured files are updated; other manifests, lockfiles, and internal dependencies are **not** updated. Use a package-specific build or publication step if those files require synchronization. The CLI's `--version` reports its Cargo build version, not a configured package version.
+- Configured version files are the release version source and must contain a stable SemVer version in the field listed above. Configured version files and supported existing lockfiles are updated; other manifests and internal dependency requirements are **not** updated. Use a package-specific build or publication step if those files require synchronization. The CLI's `--version` reports its Cargo build version, not a configured package version.
 - Names use ASCII letters, digits, hyphens, and underscores. Paths are relative to the repository root and cannot contain parent components. Package output files cannot overlap or resolve outside the repository.
 - Unknown packages, invalid bumps, duplicate YAML keys, empty summaries, and prerelease versions are rejected. `add` never overwrites a note.
 - Only top-level `.changenote/*.md` files are read. Hidden files and `README.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` are ignored.
