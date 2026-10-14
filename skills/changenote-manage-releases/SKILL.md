@@ -90,6 +90,9 @@ Keep required technical names and terms, and use conventional release-note verbs
 - Use simple verb forms and specific words; avoid jargon, promotional text, and vague claims.
 - Put each sentence on a separate line.
 - Write commands, paths, option names, and API names in backticks.
+- To include a PR reference, add a Markdown link to the note summary, such as `Fix output ([#123](https://github.com/owner/repo/pull/123))`.
+  - Use the actual repository URL and a verified PR number; omit the reference if the PR is not known.
+  - changenote does not look up or add PR numbers automatically.
 - For a breaking change, identify what no longer works and give the required migration steps.
   - Use imperative sentences for instructions.
   - Select the bump from the repository's compatibility policy; do not assume every breaking change requires `major`.
@@ -130,29 +133,16 @@ To update your scripts:
 Use only examples that match the actual change.
 Replace `pkg-a` with the configured package name.
 
-## Changelog and Release Notes Format
-
-Omit empty groups.
-Each package has its own `CHANGELOG.md` in its configured directory.
-Group notes by each note's bump for that package, not by the package's overall release bump.
-Include migration steps for breaking changes and keep multiline Markdown inside each note's list item.
-To include a PR number, add a Markdown link to the pending note summary, such as `Fix output ([#123](https://github.com/owner/repo/pull/123))`.
-Use the actual repository URL and a verified PR number; omit the reference if the PR is not known.
-`version` preserves this link in the changelog, and GitHub Release publication preserves it in the release body.
-changenote does not look up or add PR numbers automatically.
-Use pending change notes as input to `version`; do not create a separate `RELEASE_NOTES.md`.
-
-GitHub Release publication reads the exact version entry from each package's changelog in the validated release commit, without its version heading.
-Saved `.changenote/releases.json` contains only package, old version, version, bump, and tag metadata; pending status still includes notes.
-Publication rejects manual edits to the generated release tree.
-Missing, empty, or duplicate version entries stop publication, and retries do not replace existing GitHub Release text.
-Upgrade the CLI and Actions together; old saved batches with `notes` are unsupported and need completion with matching old tooling or manual handling before upgrade.
-Do not convert old batches by editing committed data.
-
 ## Apply Versions or Create Tags
 
 Run `version`, `tag`, or a GitHub Release workflow only when the user explicitly requests that specific release action.
 Permission to add notes does not authorize versioning; permission to version does not authorize tags, pushes, or publication.
+
+Use pending change notes as input to `version`.
+Do not manually edit the generated release tree; publication validates it.
+When upgrading release tooling, upgrade the CLI and Actions together.
+Complete old saved batches containing `notes` with matching old tooling, or inspect release state before manual handling.
+Do not convert old batches by editing committed data.
 
 For an authorized version operation:
 

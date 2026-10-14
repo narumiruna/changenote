@@ -24,7 +24,10 @@
 - Add or update a note in `.changenote/` after you complete a change that requires a release.
   - Include this note before you commit or merge the change.
   - Add a note for new features, bug fixes, breaking changes, and changes to installation or other user-facing behavior.
-  - No note is required for documentation-only changes or test-only changes.
+  - For changes in `skills/`, decide whether a note is required from the effect on agent behavior, not the file type.
+    - Add a note when a change modifies a skill's workflow, limits, or default behavior.
+    - No note is required for text or structure changes that preserve the skill's operating instructions.
+  - No note is required for other documentation-only changes or test-only changes.
   - No note is required for internal refactors that do not affect users or release artifacts.
   - Select affected package names from `.changenote/config.json`.
     - The CLI package name is `changenote`, not `cli`.
