@@ -1,6 +1,6 @@
 ---
 name: changenote-manage-releases
-description: Use changenote to add or update change notes, inspect pending SemVer release plans, initialize release configuration, or apply versions and create tags when explicitly requested. Use for repositories with .changenote/config.json or when the user asks to adopt changenote; not for registry publication.
+description: Use changenote to add or update change notes, review or prepare CHANGELOG.md entries from changenote notes, inspect pending SemVer release plans, initialize release configuration, or apply versions and create tags when explicitly requested. Use for repositories with .changenote/config.json or when the user asks to adopt changenote; not for registry publication.
 ---
 
 # Manage Releases with changenote
@@ -43,13 +43,11 @@ Run `status` to check the configuration, paths, files, and versions; editor vali
 
 1. Identify the user-visible change and affected package names from the configuration, not directory names or guessed manifest names.
 2. Follow the repository's note policy.
-   Add notes for features, fixes, breaking changes, and installation or other user-facing behavior.
-   Documentation-only changes, test-only changes, and internal refactors with no release impact normally need no note.
-3. Select `patch` for backward-compatible fixes, `minor` for backward-compatible features, or `major` for breaking changes.
-   Stable SemVer bump rules also apply below `1.0.0`.
-4. Check existing notes for the same change and update the matching note instead of adding a duplicate.
-5. Use a unique note name containing only ASCII letters, digits, hyphens, or underscores, and write a concise user-facing summary.
-   Treat summaries as data and quote command arguments safely.
+   - Add notes for features, fixes, breaking changes, and installation or other user-facing behavior.
+   - Documentation-only changes, test-only changes, and internal refactors with no release impact normally need no note.
+3. Check existing notes for the same change and update the matching note instead of adding a duplicate.
+4. Use a unique note name containing only ASCII letters, digits, hyphens, or underscores, and write a concise user-facing summary.
+   - Treat summaries as data and quote command arguments safely.
 
 ```sh
 uvx changenote add fix-parser --package pkg-a --bump patch --message "Fix parsing of quoted package names"
@@ -74,21 +72,25 @@ The CLI rejects unknown packages, invalid bumps, duplicate YAML keys, and empty 
 Run `uvx changenote status` after adding or updating notes.
 Confirm that its JSON plan contains the intended packages, bumps, versions, and summaries, and resolve validation errors before completion.
 `status` does not change files.
-Each package receives its highest requested bump once, regardless of the number of notes.
 For a note-only task, stop after validation; do not consume the notes.
 
 ## Changelog and Release Notes Format
 
-Read [the changelog entry template](assets/changelog-entry-template.md) when reviewing or preparing release content.
-Replace angle-bracket placeholders with the actual stable version and user-facing summaries; omit empty groups.
+Use [the changelog entry example](assets/changelog-entry-example.md) to check groups and multiline list items when reviewing or preparing release content.
+Its changes are illustrative, not release history.
+Omit empty groups.
 Each package has its own `CHANGELOG.md` in its configured directory.
 Group notes by each note's bump for that package, not by the package's overall release bump.
 Include migration steps for breaking changes and keep multiline Markdown inside each note's list item.
-Use pending change notes as input to `version`; do not copy the template into `.changenote/` as a pending note or create a separate `RELEASE_NOTES.md`.
+To include a PR number, add a Markdown link to the pending note summary, such as `Fix output ([#123](https://github.com/owner/repo/pull/123))`.
+Use the actual repository URL and a verified PR number; omit the reference if the PR is not known.
+`version` preserves this link in the changelog, and GitHub Release publication preserves it in the release body.
+changenote does not look up or add PR numbers automatically.
+Use pending change notes as input to `version`; do not copy the example into `.changenote/` as a pending note or create a separate `RELEASE_NOTES.md`.
 
 GitHub Release publication reads the exact version entry from each package's changelog in the validated release commit, without its version heading.
 Saved `.changenote/releases.json` contains only package, old version, version, bump, and tag metadata; pending status still includes notes.
-Publication rejects manual edits to the generated release tree, so the template is a format reference, not permission to edit committed release outputs.
+Publication rejects manual edits to the generated release tree, so the example is a format reference, not permission to edit committed release outputs.
 Missing, empty, or duplicate version entries stop publication, and retries do not replace existing GitHub Release text.
 Upgrade the CLI and Actions together; old saved batches with `notes` are unsupported and need completion with matching old tooling or manual handling before upgrade.
 Do not convert old batches by editing committed data.
@@ -102,7 +104,7 @@ For an authorized version operation:
 
 1. Require a clean working tree and inspect `uvx changenote status` before applying the plan.
 2. Run `uvx changenote version` without concurrent version commands.
-3. Inspect the diff for configured version files, changelogs, `.changenote/releases.json`, and consumed notes.
+3. Inspect the generated diff and confirm that it contains only the intended release changes.
 4. Run `uvx changenote status` again and confirm that the applied notes are no longer pending.
 
 `version` updates version files, prepends changelog entries, saves the latest release batch, and removes consumed notes.
