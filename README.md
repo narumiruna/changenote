@@ -6,7 +6,7 @@ Each package has an explicit directory and a version file: a package manifest or
 
 ## Install
 
-Requires stable Rust with edition 2024 support. Git is required only for `tag`.
+Requires stable Rust with edition 2024 support. Git is required for `check` and `tag`.
 
 ```sh
 cargo install --path . --locked
@@ -47,7 +47,7 @@ git push origin refs/tags/v0.1.0
 
 `version` takes the highest requested bump for each package and applies it once. Multiple patch notes cause one patch bump, not multiple bumps. Major, minor, and patch follow stable SemVer rules, including versions below 1.0.0.
 
-The command updates each configured version file, prepends entries to `CHANGELOG.md`, saves the latest release batch to `.changenote/releases.json`, and removes consumed notes. A run without pending notes does not change files or clear the saved batch.
+The command updates each configured version file, adds entries to `CHANGELOG.md`, saves the latest release batch to `.changenote/releases.json`, and removes consumed notes. New entries follow the existing title and introduction, before the first ATX SemVer version heading outside fenced or indented code. A file without a version heading is treated as an introduction. Prior content is not reformatted. Notes are grouped by their own bump under `Major Changes`, `Minor Changes`, and `Patch Changes`, in that order; empty groups are omitted. Multiline Markdown remains inside each note's list item. A run without pending notes does not change files or clear the saved batch.
 
 ## Monorepo
 
@@ -93,7 +93,7 @@ Packages in any language can use a plain-text `VERSION` file, including Python, 
 | `package.json` | Top-level `version` |
 | Other filenames, including `VERSION` | Plain-text stable SemVer string |
 
-Manifest versions must be explicit strings. Dynamic Python versions, Poetry-only versions, and inherited Cargo workspace versions are not supported. TOML comments and unrelated fields are preserved. JSON fields and their order are preserved; output uses two-space indentation and a final newline. Lockfiles and dependency versions are not updated. `init` still creates a plain-text `VERSION`; configure existing manifests manually.
+Manifest versions must be explicit strings. Dynamic Python versions, Poetry-only versions, and inherited Cargo workspace versions are not supported. TOML comments and unrelated fields are preserved. JSON updates replace only the top-level version value token. Every other byte is preserved, including indentation, line endings, field order, number spelling, and the presence or absence of a final newline. Duplicate top-level version keys, including escaped spellings of the same key, are rejected. Lockfiles and dependency versions are not updated. `init` still creates a plain-text `VERSION`; configure existing manifests manually.
 
 One note can name multiple packages with different bumps:
 
@@ -113,6 +113,50 @@ To create a note with the same bump for several packages:
 ```sh
 changenote add shared-api -p pkg-a -p pkg-b --bump minor -m "Update the shared API"
 ```
+
+To use different bumps in one note:
+
+```sh
+changenote add shared-api --minor pkg-a --patch pkg-b -m "Update the shared API"
+```
+
+Repeat `--major`, `--minor`, or `--patch` for each package. Do not combine these options with `--package` or `--bump`. Conflicting bumps for one package and unknown packages fail before a file is created. Repeated identical assignments are deduplicated. The original CLI syntax and Rust `add()` API remain supported; Rust callers can use `add_with_bumps()` for mixed bumps.
+
+## Check PR notes
+
+```sh
+changenote check --since origin/main
+changenote check --since origin/main --skip-release --reason "Documentation only"
+```
+
+`check` requires the Git repository root, a clean working tree, full enough history to find a merge base, and an available base ref. It compares tracked paths between `git merge-base <ref> HEAD` and `HEAD`; it does not include uncommitted or untracked changes. File renames report both old and new paths. Nested packages use the deepest matching configured directory. Files outside all configured packages are reported but do not imply a package release.
+
+If packages changed, at least one valid top-level note must be added, modified, or renamed in that comparison and remain in `HEAD`. Unchanged old notes and deleted notes do not satisfy the check. This is a **PR-level check, not proof of per-package note coverage**. No file patterns are excluded automatically. Use the explicit exemption for documentation-only or test-only changes inside package directories. `--skip-release` requires a non-empty `--reason`; it never bypasses config, version, note, or Git validation.
+
+The command writes no files. It prints a JSON report with `merge_base`, `changed_packages`, `note_paths`, `outside_paths`, `skip_reason`, and `passed` when validation succeeds, including a missing-note failure. Exit codes are `0` for a passing report, `1` for a missing note or validation/runtime error, and `2` for invalid CLI arguments. Validation errors write diagnostics to stderr and do not print a report.
+
+A consumer CI job can use the following steps. Replace the SHA with a reviewed compatible CLI revision. Exempt PRs must use an explicit repository review policy; this job does not infer exemptions.
+
+```yaml
+permissions:
+  contents: read
+steps:
+  - uses: actions/checkout@v7
+    with:
+      fetch-depth: 0
+      persist-credentials: false
+  - uses: dtolnay/rust-toolchain@stable
+  - name: Install changenote
+    run: cargo install --git https://github.com/narumiruna/changenote --rev <full-cli-commit-sha> --locked
+  - name: Check notes
+    env:
+      BASE_BRANCH: ${{ github.base_ref }}
+    run: changenote check --since "refs/remotes/origin/$BASE_BRANCH"
+```
+
+Use this job for `pull_request` events. Checkout must contain `refs/remotes/origin/<base branch>` and a clean tree. Branch names enter the shell through an environment variable, not inline expression substitution.
+
+For tested, isolated fixtures, see [changenote-example](https://github.com/narumiruna/changenote-example). Use its pinned CLI revision; released binaries can have different features.
 
 ## GitHub Actions
 
@@ -194,7 +238,7 @@ The automatic workflow above runs publication after PR management. Publication c
 
 To retry a partial publication failure, run **Release** manually on `main`. This runs both PR management and publication again. They use one workflow concurrency group, so no separate retry workflow is needed. Keep required publication steps in this workflow: tags pushed with `GITHUB_TOKEN` do not trigger other push workflows.
 
-Publication selects the latest first-parent commit that changes `.changenote/releases.json`. It reconstructs that commit from the parent's notes and compares the complete generated tree before publication. Standard merge, squash, and rebase merges are supported. A later unrelated commit or new pending notes do not change the release target.
+Publication selects the latest first-parent commit that changes `.changenote/releases.json`. It reconstructs that commit from the parent's notes and compares the complete generated tree before publication. The publication Action first checks current output, then the exact legacy output (flat changelogs prepended before titles and two-space JSON with a final newline). Mixed output profiles and arbitrary edits are rejected. The hidden `version --legacy-output` option is reserved for this reconstruction in a temporary Action worktree; do not use it for new releases. Upgrade CLI and Action pins together. Older Actions do not support this fallback. Standard merge, squash, and rebase merges are supported. A later unrelated commit or new pending notes do not change the release target.
 
 Existing remote tags must point to the selected commit. Missing tags and GitHub Releases are created; existing release text is not replaced. Draft releases, missing tags for existing releases, malformed batches, batch deletion, manually edited release trees, and tag conflicts stop publication. A batch in a root commit cannot be verified. No batch is a no-op.
 

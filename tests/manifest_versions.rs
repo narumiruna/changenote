@@ -28,6 +28,61 @@ fn note(root: &Path) {
 }
 
 #[test]
+fn json_replaces_only_the_top_level_version_token() {
+    for (before, old_token) in [
+        (
+            "{\"version\":\"1.2.3\",\"nested\":{\"version\":\"1.2.3\"}}",
+            "\"1.2.3\"",
+        ),
+        (
+            "{\r\n\t\"version\" : \"1.2.3\",\r\n\t\"text\":\"escaped \\\"version\\\"\"\r\n}",
+            "\"1.2.3\"",
+        ),
+        (
+            "{\n    \"version\": \"1.2.3\",\n    \"n\": 1.000e+400\n}\n",
+            "\"1.2.3\"",
+        ),
+        (
+            r#"{"ver\u0073ion": "1.2.\u0033", "nested": {"version": "1.2.3"}}"#,
+            r#""1.2.\u0033""#,
+        ),
+    ] {
+        let dir = project("package.json", before);
+        note(dir.path());
+        version(dir.path()).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.path().join("package.json")).unwrap(),
+            before.replacen(old_token, "\"1.3.0\"", 1)
+        );
+    }
+}
+
+#[test]
+fn rejects_duplicate_version_and_non_json_without_writes() {
+    for before in [
+        r#"{"version":"1.2.3","version":"2.0.0"}"#,
+        r#"{"version":"1.2.3","ver\u0073ion":"1.2.3"}"#,
+        "{\"version\":\"1.2.3\",}",
+        "{\"version\":\"1.2.3\" /* comment */}",
+    ] {
+        let dir = project("package.json", before);
+        fs::write(
+            dir.path().join(".changenote/fix.md"),
+            "---\npkg: patch\n---\n\nFix",
+        )
+        .unwrap();
+        assert!(status(dir.path()).is_err());
+        assert!(version(dir.path()).is_err());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("package.json")).unwrap(),
+            before
+        );
+        assert!(dir.path().join(".changenote/fix.md").exists());
+        assert!(!dir.path().join("CHANGELOG.md").exists());
+    }
+}
+
+#[test]
 fn reads_and_updates_manifest_versions() {
     for (filename, before, after) in [
         (

@@ -1,4 +1,7 @@
+mod changelog;
+mod check;
 mod json_value;
+pub use check::{CheckReport, check};
 mod version_file;
 
 use anyhow::{Context, Result, ensure};
@@ -304,6 +307,22 @@ pub fn add(
     bump: Bump,
     message: &str,
 ) -> Result<PathBuf> {
+    add_with_bumps(
+        root,
+        name,
+        packages.into_iter().map(|p| (p, bump)).collect(),
+        message,
+    )
+}
+
+/// Create one note with independently selected package bumps.
+/// Conflicting assignments are rejected before any file is created.
+pub fn add_with_bumps(
+    root: &Path,
+    name: &str,
+    packages: Vec<(String, Bump)>,
+    message: &str,
+) -> Result<PathBuf> {
     safe_name(name)?;
     ensure!(
         !["README", "AGENTS", "CLAUDE", "GEMINI"]
@@ -317,9 +336,11 @@ pub fn add(
     );
     let config = load_config(root)?;
     let mut changes = BTreeMap::new();
-    for pkg in packages {
+    for (pkg, bump) in packages {
         ensure!(config.packages.contains_key(&pkg), "unknown package {pkg}");
-        changes.insert(pkg, bump);
+        if let Some(previous) = changes.insert(pkg.clone(), bump) {
+            ensure!(previous == bump, "conflicting bumps for package {pkg}");
+        }
     }
     let content = format!(
         "---\n{}---\n\n{}\n",
@@ -336,6 +357,13 @@ pub fn add(
 }
 
 pub fn version(root: &Path) -> Result<Vec<Release>> {
+    version_with_legacy_output(root, false)
+}
+
+/// Reconstruct pre-grouped-changelog release trees for publication verification.
+/// Normal releases must use `version` instead.
+#[doc(hidden)]
+pub fn version_with_legacy_output(root: &Path, legacy: bool) -> Result<Vec<Release>> {
     let config = load_config(root)?;
     let notes = notes(root, &config)?;
     let releases = plan(root, &config, &notes)?;
@@ -352,19 +380,9 @@ pub fn version(root: &Path) -> Result<Vec<Release>> {
         } else {
             String::new()
         };
-        let entry = format!(
-            "## {}\n\n{}\n\n",
-            release.version,
-            release
-                .notes
-                .iter()
-                .map(|n| format!("- {}", n.replace('\n', "\n  ")))
-                .collect::<Vec<_>>()
-                .join("\n\n")
-        );
-        writes.push((path, format!("{entry}{old}")));
+        writes.push((path, changelog::render(release, &old, legacy)));
         let version_path = checked_path(root, &pkg.path.join(&pkg.version_file))?;
-        let content = version_content(&version_path, &release.version)?;
+        let content = version_content(&version_path, &release.version, legacy)?;
         writes.push((version_path, content));
     }
     writes.push((

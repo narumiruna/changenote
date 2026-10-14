@@ -33,7 +33,14 @@ checkout_work "$parent"
 jq -e --slurpfile expected "$temp/expected.json" '. == $expected[0]' "$temp/batch.json" >/dev/null || fail 'Batch does not match the parent release plan.'
 "$cli" version > "$temp/applied.json"
 stage_release "$temp/batch.json"
-[[ $(git write-tree) == "$(git rev-parse "$release^{tree}")" ]] || fail 'Release commit contains changes beyond the generated release tree.'
+if [[ $(git write-tree) != "$(git rev-parse "$release^{tree}")" ]]; then
+  # The old CLI used flat changelogs and two-space JSON. Accept only its
+  # exact generated tree, never arbitrary edits or per-file mixtures.
+  git reset --hard "$parent"
+  "$cli" version --legacy-output > "$temp/applied.json"
+  stage_release "$temp/batch.json"
+  [[ $(git write-tree) == "$(git rev-parse "$release^{tree}")" ]] || fail 'Release commit contains changes beyond the generated release tree (current or legacy output).'
+fi
 git reset --hard "$release"
 # Inspect all remote objects before creating anything. API failure is not absence.
 gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$temp/releases.json"

@@ -1,4 +1,4 @@
-use crate::json_value::JsonValue;
+use crate::json_value::{JsonValue, version_span};
 use anyhow::{Context, Result, ensure};
 use semver::Version;
 use std::{fs, path::Path};
@@ -7,7 +7,11 @@ use toml_edit::DocumentMut;
 // The configured filename selects the version field. Other filenames remain plain text.
 enum VersionFile {
     Plain,
-    Json(JsonValue),
+    Json {
+        document: JsonValue,
+        content: String,
+        span: std::ops::Range<usize>,
+    },
     Toml(DocumentMut, &'static str),
 }
 
@@ -15,7 +19,11 @@ impl VersionFile {
     fn load(path: &Path) -> Result<(Self, Version)> {
         let content = fs::read_to_string(path)?;
         let file = match path.file_name().and_then(|name| name.to_str()) {
-            Some("package.json") => Self::Json(serde_json::from_str(&content)?),
+            Some("package.json") => Self::Json {
+                document: serde_json::from_str(&content)?,
+                span: version_span(&content)?,
+                content: content.clone(),
+            },
             Some(name @ ("Cargo.toml" | "pyproject.toml")) => {
                 let document = content.parse::<DocumentMut>()?;
                 let section = if name == "Cargo.toml" {
@@ -39,19 +47,20 @@ impl VersionFile {
             }
             _ => Self::Plain,
         };
-        let text = match &file {
-            Self::Plain => content.trim().to_owned(),
-            Self::Json(document) => document
-                .get("version")
-                .and_then(JsonValue::as_string)
-                .context("package.json requires a string version field")?,
-            Self::Toml(document, section) => document
-                .get(section)
-                .and_then(|item| item.get("version"))
-                .and_then(|item| item.as_str())
-                .with_context(|| format!("{section}.version must be an explicit string"))?
-                .to_owned(),
-        };
+        let text =
+            match &file {
+                Self::Plain => content.trim().to_owned(),
+                Self::Json { document, .. } => document
+                    .get("version")
+                    .and_then(JsonValue::as_string)
+                    .context("package.json requires a string version field")?,
+                Self::Toml(document, section) => document
+                    .get(section)
+                    .and_then(|item| item.get("version"))
+                    .and_then(|item| item.as_str())
+                    .with_context(|| format!("{section}.version must be an explicit string"))?
+                    .to_owned(),
+            };
         let version = Version::parse(&text)?;
         ensure!(
             version.pre.is_empty() && version.build.is_empty(),
@@ -67,15 +76,25 @@ pub(crate) fn read_version(path: &Path) -> Result<Version> {
         .with_context(|| format!("invalid version in {}", path.display()))
 }
 
-pub(crate) fn version_content(path: &Path, version: &Version) -> Result<String> {
+pub(crate) fn version_content(path: &Path, version: &Version, legacy: bool) -> Result<String> {
     let (file, _) = VersionFile::load(path)
         .with_context(|| format!("invalid version in {}", path.display()))?;
     match file {
         VersionFile::Plain => Ok(format!("{version}\n")),
-        VersionFile::Json(mut document) => {
-            *document.get_mut("version").context("missing version")? =
-                serde_json::from_str(&serde_json::to_string(&version.to_string())?)?;
-            Ok(format!("{}\n", serde_json::to_string_pretty(&document)?))
+        VersionFile::Json {
+            mut document,
+            mut content,
+            span,
+        } => {
+            let value = serde_json::to_string(&version.to_string())?;
+            if legacy {
+                *document.get_mut("version").context("missing version")? =
+                    serde_json::from_str(&value)?;
+                Ok(format!("{}\n", serde_json::to_string_pretty(&document)?))
+            } else {
+                content.replace_range(span, &value);
+                Ok(content)
+            }
         }
         VersionFile::Toml(mut document, section) => {
             let value = document[section]["version"]

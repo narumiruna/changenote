@@ -151,7 +151,14 @@ class Metadata(unittest.TestCase):
     def test_readme_examples_and_contracts(self):
         readme = (ROOT / "README.md").read_text()
         blocks = re.findall(r"```yaml\n(.*?)```", readme, re.DOTALL)
-        workflow = yaml.load(blocks[0], Loader=yaml.BaseLoader)
+        examples = [yaml.load(block, Loader=yaml.BaseLoader) for block in blocks]
+        workflow = next(example for example in examples if "jobs" in example)
+        check = next(example for example in examples if "steps" in example)
+        self.assertEqual(check["permissions"], {"contents": "read"})
+        self.assertEqual(check["steps"][0]["with"]["fetch-depth"], "0")
+        self.assertEqual(check["steps"][0]["with"]["persist-credentials"], "false")
+        self.assertEqual(check["steps"][-1]["env"]["BASE_BRANCH"], "${{ github.base_ref }}")
+        self.assertEqual(check["steps"][-1]["run"], 'changenote check --since "refs/remotes/origin/$BASE_BRANCH"')
         self.assertEqual(workflow["permissions"], {"contents": "read"})
         self.assertEqual(
             workflow["jobs"]["release"]["permissions"],
