@@ -93,8 +93,11 @@ jobs:
         with:
           python-version: '3.12'
       - name: Set release build version
+        id: prepare
         shell: bash
-        run: uv run --no-project python workflow/scripts/prepare-python-release.py source
+        run: |
+          version=$(uv run --no-project python workflow/scripts/prepare-python-release.py source)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       # Create the directory as the runner user before the Linux container writes to it.
       - name: Create distribution directory
         shell: bash
@@ -110,9 +113,11 @@ jobs:
       - name: Check installed wheel version
         shell: bash
         working-directory: source
+        env:
+          EXPECTED_VERSION: ${{ steps.prepare.outputs.version }}
         run: |
           actual=$(uvx --isolated --no-index --find-links dist changenote --version)
-          test "$actual" = "changenote $(tr -d '\r\n' < VERSION)"
+          test "$actual" = "changenote $EXPECTED_VERSION"
       - name: Build source archive
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0

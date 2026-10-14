@@ -363,11 +363,10 @@ Before production use, verify repository permissions, branch rules, and App-toke
 
 The repository contains one Rust Cargo package and one Python distribution that packages its executable. Neither uses a workspace; the CLI still supports release plans for other monorepos.
 
-- `Cargo.toml`: Rust package metadata and dependencies.
+- `Cargo.toml`: Rust package metadata, dependencies, and release version source.
 - `Cargo.lock`: Rust dependency lockfile.
 - `src/`: Rust CLI and release logic.
 - `tests/`: Rust integration tests.
-- `VERSION`: CLI release-plan version file.
 - `pyproject.toml`: maturin package metadata and build configuration.
 - `uv.lock`: Python project dependency lockfile.
 - `python/changenote/`: Python wrapper module for the Rust CLI.
@@ -417,6 +416,6 @@ The Python distribution `changenote`, with wrapper sources in `python/changenote
 
 The existing [changenote PyPI project](https://pypi.org/project/changenote/) is the publication target. The Release workflow builds platform wheels with maturin Action and publishes with `uv publish`. Configure its `PYPI_TOKEN` GitHub Actions secret before the first upload. After a successful publication, users on supported platforms can run `uvx changenote status`. See `python/README.md`.
 
-The Rust CLI and Python distribution share the `changenote` release plan and root `CHANGELOG.md`; the current single release package uses `v<version>` tags. Python has no independent version file or bump. Its manifest uses a dynamic version from root `Cargo.toml`, so Python wheel metadata and the included Rust CLI version match. The PyPI workflow sets the Cargo package and its Cargo.lock entry to the release's `VERSION` in a disposable build checkout. It does not change the committed Cargo files. For manual publication, align the Rust crate version with `VERSION` and update lockfiles first.
+The Rust CLI and Python distribution share the `changenote` release plan and root `CHANGELOG.md`; the current single release package uses `v<version>` tags. Python has no independent version file or bump. Its manifest uses a dynamic version from root `Cargo.toml`, so Python wheel metadata and the included Rust CLI version match. The PyPI workflow validates `Cargo.toml` against the saved release batch and checks the local package version in `Cargo.lock`. Older releases configured with `VERSION` receive build-only Cargo version synchronization in a disposable checkout. The wheel check uses the validated version, not a separate version file. For manual publication, update the Cargo version and lockfile first.
 
 CI currently runs on Ubuntu only. It runs Rust format checks, lint checks, and tests, plus Python wrapper tests, binary wheel builds, and uvx checks with Python 3.14. The container image uses the Rust executable; mount a repository at `/repo` to use it.

@@ -19,12 +19,16 @@ class Prepare(unittest.TestCase):
         for name in (
             "Cargo.toml",
             "Cargo.lock",
-            "VERSION",
+            ".changenote/config.json",
             ".changenote/releases.json",
         ):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes((ROOT / name).read_bytes())
+        # Keep a standalone legacy fixture; the repository no longer has VERSION.
+        (self.root / ".changenote/config.json").write_text(json.dumps({
+            "packages": {"changenote": {"path": ".", "version_file": "VERSION"}}
+        }))
         (self.root / "VERSION").write_text("1.2.3\n")
         (self.root / ".changenote/releases.json").write_text(
             json.dumps([{"package": "changenote", "version": "1.2.3"}])
@@ -57,6 +61,49 @@ class Prepare(unittest.TestCase):
             [(self.root / name).read_bytes() for name in ("Cargo.toml", "Cargo.lock")],
             first,
         )
+
+    def cargo_source(self):
+        prepare(self.root)
+        (self.root / "VERSION").unlink()
+        (self.root / ".changenote/config.json").write_text(json.dumps({
+            "packages": {"changenote": {"path": ".", "version_file": "Cargo.toml"}}
+        }))
+
+    def test_cargo_source_without_version_file_is_read_only(self):
+        self.cargo_source()
+        paths = [self.root / name for name in (
+            "Cargo.toml", "Cargo.lock", ".changenote/config.json", ".changenote/releases.json"
+        )]
+        before = [path.read_bytes() for path in paths]
+        self.assertEqual(prepare(self.root), "1.2.3")
+        self.assertEqual(prepare(self.root), "1.2.3")
+        self.assertEqual([path.read_bytes() for path in paths], before)
+        self.assertFalse((self.root / "VERSION").exists())
+
+    def test_cargo_source_batch_mismatch_does_not_write(self):
+        self.cargo_source()
+        (self.root / ".changenote/releases.json").write_text(json.dumps([
+            {"package": "changenote", "version": "1.2.4"}
+        ]))
+        self.assert_rejected()
+
+    def test_cargo_source_invalid_version_does_not_write(self):
+        self.cargo_source()
+        path = self.root / "Cargo.toml"
+        original = path.read_text()
+        for version in ("01.2.3", "1.2", "1.2.3-rc.1", "1.2.3+build"):
+            with self.subTest(version=version):
+                path.write_text(original.replace('version = "1.2.3"', f'version = "{version}"', 1))
+                self.assert_rejected()
+
+    def test_cargo_source_lock_mismatch_does_not_write(self):
+        self.cargo_source()
+        path = self.root / "Cargo.lock"
+        path.write_text(path.read_text().replace(
+            'name = "changenote"\nversion = "1.2.3"',
+            'name = "changenote"\nversion = "9.9.9"', 1
+        ))
+        self.assert_rejected()
 
     def test_invalid_version_does_not_write(self):
         for version in ("01.2.3", "1.2", "1.2.3-rc.1", "1.2.3+build", "1.2.3\n4.5.6"):
