@@ -11,5 +11,5 @@
 
 ### Patch Changes
 
-- Preserve multiline Markdown inside each changelog list item.
+- Preserve multiline Markdown inside each changelog list item ([#123](https://github.com/owner/repo/pull/123)).
   Nested lists and code blocks keep their indentation.
