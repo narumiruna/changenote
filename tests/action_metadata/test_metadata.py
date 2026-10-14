@@ -158,11 +158,15 @@ class Metadata(unittest.TestCase):
         pypi = jobs["pypi"]
         self.assertEqual(pypi["needs"], ["publish", "wheels"])
         self.assertIn("needs.wheels.result == 'success'", pypi["if"])
-        self.assertEqual(pypi["permissions"], {"id-token": "write"})
+        self.assertEqual(pypi["permissions"], {"contents": "read"})
         self.assertEqual(pypi["environment"]["name"], "pypi")
         self.assertEqual(pypi["steps"][0]["with"]["pattern"], "python-*")
-        command = pypi["steps"][-1]["run"]
-        self.assertIn("uv publish --trusted-publishing always", command)
+        upload = pypi["steps"][-1]
+        self.assertEqual(
+            upload["env"], {"UV_PUBLISH_TOKEN": "${{ secrets.PYPI_TOKEN }}"}
+        )
+        command = upload["run"]
+        self.assertIn("uv publish --trusted-publishing never", command)
         self.assertIn("--check-url https://pypi.org/simple/", command)
 
     def test_readme_examples_and_contracts(self):
