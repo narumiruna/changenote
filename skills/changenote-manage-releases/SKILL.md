@@ -138,7 +138,7 @@ Replace `pkg-a` with the configured package name.
 Run `version`, `tag`, or a GitHub Release workflow only when the user explicitly requests that specific release action.
 Permission to add notes does not authorize versioning; permission to version does not authorize tags, pushes, or publication.
 
-Use pending change notes as input to `version`; do not create a separate `RELEASE_NOTES.md`.
+Use pending change notes as input to `version`.
 Do not manually edit the generated release tree; publication validates it.
 When upgrading release tooling, upgrade the CLI and Actions together.
 Complete old saved batches containing `notes` with matching old tooling, or inspect release state before manual handling.
