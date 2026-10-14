@@ -1,0 +1,2 @@
+# Exact generated changelog excerpts retain their final blank-line separator.
+tests/fixtures/planning/**/expected-*-CHANGELOG.md -text whitespace=-blank-at-eof

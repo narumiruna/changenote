@@ -76,6 +76,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "getrandom",
  "semver",
  "serde",
  "serde_json",

@@ -1,0 +1,23 @@
+[
+  {
+    "package": "pkg-node",
+    "old_version": "1.2.3",
+    "version": "1.2.4",
+    "bump": "patch",
+    "tag": "changenote/pkg-node@v1.2.4",
+    "notes": [
+      "Update shared API",
+      "Update shared API"
+    ]
+  },
+  {
+    "package": "pkg-python",
+    "old_version": "1.2.3",
+    "version": "1.3.0",
+    "bump": "minor",
+    "tag": "changenote/pkg-python@v1.3.0",
+    "notes": [
+      "Update shared API"
+    ]
+  }
+]

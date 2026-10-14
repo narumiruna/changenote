@@ -106,7 +106,7 @@ One note can name multiple packages with different bumps:
 Update the shared API
 ```
 
-With two or more configured packages, tags use `changenote/<package>@v<version>`. A patch for `pkg-a` at `0.1.0` creates `changenote/pkg-a@v0.1.1`. Packages without notes remain unchanged. Tag format depends on the number of configured packages, not the number changed in a release.
+With two or more configured packages, tags use `changenote/<package>@v<version>`. A patch for `pkg-a` at `0.1.0` creates `changenote/pkg-a@v0.1.1`. Packages without notes remain unchanged unless they belong to an active fixed group. Tag format depends on the number of configured packages, not the number changed in a release.
 
 To create a note with the same bump for several packages:
 
@@ -121,6 +121,41 @@ changenote add shared-api --minor pkg-a --patch pkg-b -m "Update the shared API"
 ```
 
 Repeat `--major`, `--minor`, or `--patch` for each package. Do not combine these options with `--package` or `--bump`. Conflicting bumps for one package and unknown packages fail before a file is created. Repeated identical assignments are deduplicated. The original CLI syntax and Rust `add()` API remain supported; Rust callers can use `add_with_bumps()` for mixed bumps.
+
+## Note sources and automatic names
+
+```sh
+changenote status --include-note-paths
+changenote status --include-note-paths --include-note-bumps
+changenote add --patch pkg-a -m "Fix output"
+changenote add -p pkg-a --bump minor -m "Add an API"
+```
+
+`--include-note-paths` adds repository-relative `note_paths` with forward slashes, aligned with direct `notes`. Notes with identical summaries keep their separate paths. The option is independent of `--include-note-bumps`; default status JSON and saved batch fields do not change. Notes are ordered by filename, not creation time. These commands require no Git history and status writes no files. Detailed JSON requires UTF-8 note filenames; default status still supports other filenames.
+
+Omit the positional add name to generate `note-` followed by 32 lowercase hexadecimal characters from OS randomness (`getrandom`). Generated IDs are not chronological. Validation happens before allocation. File allocation is atomic and never overwrites a file or symlink; generated-name collisions retry at most eight times. Other allocation errors fail immediately. Explicit-name collisions still fail without retry. A content-write failure can leave a partial new note; inspect `.changenote` before retrying. The CLI prints the actual path. Rust callers can use `add_generated()`; existing named add APIs and signatures remain unchanged.
+
+## Fixed version groups
+
+Add an optional top-level `fixed` field to the config:
+
+```json
+{
+  "packages": {
+    "pkg-a": { "path": "packages/pkg-a", "version_file": "VERSION" },
+    "pkg-b": { "path": "packages/pkg-b", "version_file": "package.json" }
+  },
+  "fixed": [["pkg-a", "pkg-b"]]
+}
+```
+
+Each group must contain at least two distinct known names. Groups cannot overlap; globs, unknown names, invalid types, and duplicate memberships are rejected. Absent `fixed` and `fixed: []` mean independent versions. The existing Rust `Config` struct remains a package view: `load_config()` validates fixed settings, but serializing its return value does not preserve them. Do not use that view to round-trip a config with fixed settings.
+
+When any member has a pending note, the planner takes the highest current version in the group, applies the highest requested member bump once, and releases every member at that version. Each result keeps its actual `old_version`. For example, members at `1.0.0` and `2.4.9` with a patch note release together at `2.4.10`. The change for a lower-version member can therefore exceed the requested bump. A group without pending notes does not synchronize differing versions.
+
+Direct summaries, their bumps, and their paths stay with the named package. A propagated member has empty `notes` and direct `note_paths`. Detailed status adds `fixed_group` with sorted `members`, `base_version`, and filename-ordered `source_note_paths` for all notes that activate the group. Those sources are not direct package notes. Rust callers can use `status_with_note_paths()` without changing the existing `status()` API or public struct layouts.
+
+All member version files, changelogs, and tags are release outputs. A member without direct notes gets the text “Released with its fixed version group; no direct changes.” in its changelog, Release PR, and GitHub Release. Dependency ranges and lockfiles remain unchanged. Upgrade CLI and Actions together before using fixed config; older CLIs reject it.
 
 ## Check PR notes
 
@@ -160,12 +195,13 @@ For tested, isolated fixtures, see [changenote-example](https://github.com/narum
 
 ## GitHub Actions
 
-This repository provides two reusable composite Actions:
+This repository provides three reusable composite Actions:
 
 - `narumiruna/changenote@<full-commit-sha>`: create or update a Release PR.
 - `narumiruna/changenote/publish@<full-commit-sha>`: publish annotated tags and GitHub Releases.
+- `narumiruna/changenote/preview@<full-commit-sha>`: inspect publication state without source or remote writes.
 
-Both require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `changenote` executable on `PATH`. Ubuntu GitHub-hosted runners include the non-CLI tools. Package version files, changelogs, and `.changenote/releases.json` must not be symlinks. Both Actions check the batch path before CLI writes. Run at the repository root; the Actions load their scripts from the Action checkout, not the consumer repository. They do not install the CLI or publish registries. The CLI updates configured version files only; it does not synchronize other manifests or lockfiles.
+The PR and publication Actions require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `changenote` executable on `PATH`. Ubuntu GitHub-hosted runners include the non-CLI tools. Package version files, changelogs, and `.changenote/releases.json` must not be symlinks. Both writing Actions check the batch path before CLI writes. Run at the repository root; the Actions load their scripts from the Action checkout, not the consumer repository. They do not install the CLI or publish registries. The CLI updates configured version files only; it does not synchronize other manifests or lockfiles.
 
 ### Release PR workflow
 
@@ -232,13 +268,43 @@ In repository settings, enable **Actions > General > Allow GitHub Actions to cre
 
 PRs created with the default `GITHUB_TOKEN` do not automatically trigger PR workflows. If CI must run on the Release PR, use a GitHub App token (recommended) or PAT with repository contents and pull requests write permissions. Pass it through `github-token`. Checkout credentials do not select the Action's token.
 
+### Publication preview
+
+The preview Action requires Linux, Bash, Git, `gh`, `jq`, an installed compatible CLI, and standard coreutils. It needs only `contents: read`. It reads the selected remote branch in a temporary repository; the caller's files, index, refs, tags, and Git identity are unchanged. A dirty or stale source checkout does not select the release. Temporary fetches and release-tree reconstruction are removed on success and failure.
+
+```yaml
+name: Publication preview
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install changenote
+        run: cargo install --git https://github.com/narumiruna/changenote --rev <full-cli-commit-sha> --locked
+      - uses: narumiruna/changenote/preview@<full-action-commit-sha>
+        with:
+          base-branch: main
+```
+
+This is a template, not part of the production release workflow. Use the same reviewed compatible full SHA for CLI and Action. Preview uses the same latest-batch discovery, full-tree verification, and remote-state inspection as publication. It never creates tags, commits, PRs, or Releases and does not inspect registries.
+
+The `publication-plan` output is a compact JSON array of `name`, `version`, `tag`, `action`, and `conflicts`. Actions are `create-tag-and-release`, `create-release`, `none`, or `conflict`. Conflicts include a wrong remote tag identity, a draft Release, or a Release without its remote tag. Every batch entry is inspected before a conflict report is emitted. The `ready` output is true only after complete inspection finds no conflicts. `release-commit` identifies the verified batch commit.
+
+No batch succeeds with `ready=true`, an empty commit, and `[]`. Conflicts return the complete inspected report with `ready=false` and fail the step. Invalid input, tree/batch validation failures, or unavailable remote data fail without a ready plan; use the error diagnostic, not an empty plan, as the result. A readable summary goes to the step log. API failures are never treated as missing releases.
+
+The preview is advisory, not a reservation. Remote state can change afterward; real publication repeats preflight and race checks. Preview does not grant permission to publish.
+
 ### Publication workflow
 
 The automatic workflow above runs publication after PR management. Publication can recover an earlier batch even if PR management fails. Its job needs only `contents: write`.
 
 To retry a partial publication failure, run **Release** manually on `main`. This runs both PR management and publication again. They use one workflow concurrency group, so no separate retry workflow is needed. Keep required publication steps in this workflow: tags pushed with `GITHUB_TOKEN` do not trigger other push workflows.
 
-Publication selects the latest first-parent commit that changes `.changenote/releases.json`. It reconstructs that commit from the parent's notes and compares the complete generated tree before publication. The publication Action first checks current output, then the exact legacy output (flat changelogs prepended before titles and two-space JSON with a final newline). Mixed output profiles and arbitrary edits are rejected. The hidden `version --legacy-output` option is reserved for this reconstruction in a temporary Action worktree; do not use it for new releases. Upgrade CLI and Action pins together. Older Actions do not support this fallback. Standard merge, squash, and rebase merges are supported. A later unrelated commit or new pending notes do not change the release target.
+Publication selects the latest first-parent commit that changes `.changenote/releases.json`. It reconstructs that commit from the parent's notes and compares the complete generated tree before publication. The publication Action first checks current output, then the exact legacy output (flat changelogs prepended before titles and two-space JSON with a final newline). Mixed output profiles and arbitrary edits are rejected. Legacy replay rejects active fixed-group plans because older writers did not support them. The hidden `version --legacy-output` option is reserved for this reconstruction in a temporary Action worktree; do not use it for new releases. Upgrade CLI and Action pins together. Older Actions do not support this fallback. Standard merge, squash, and rebase merges are supported. A later unrelated commit or new pending notes do not change the release target.
 
 Existing remote tags must point to the selected commit. Missing tags and GitHub Releases are created; existing release text is not replaced. Draft releases, missing tags for existing releases, malformed batches, batch deletion, manually edited release trees, and tag conflicts stop publication. A batch in a root commit cannot be verified. No batch is a no-op.
 
@@ -248,8 +314,8 @@ The repository's `.github/workflows/release.yml` runs PR management and GitHub p
 
 | Action | Input | Default |
 | --- | --- | --- |
-| Both | `github-token` | Workflow token |
-| Both | `base-branch` | Repository default branch |
+| All | `github-token` | Workflow token |
+| All | `base-branch` | Repository default branch |
 | Release PR | `commit-message` | `chore(release): version packages` |
 | Release PR | `pr-title` | `chore(release): version packages` |
 
@@ -275,7 +341,7 @@ Before production use, verify repository permissions, branch rules, and App-toke
 - Only top-level `.changenote/*.md` files are read. Hidden files and `README.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` are ignored.
 - `tag` requires a clean Git working tree and committed release data. It creates local tags only; it does not push, publish artifacts, or run arbitrary commands.
 - Input validation and output preparation happen before version writes. Filesystem failures during writes can leave partial changes. Run in a clean checkout, inspect changes, and use Git to restore files before retrying. Do not run concurrent local version commands.
-- Dependency propagation, registry publication, prereleases, and fixed or linked version groups are not implemented.
+- Dependency propagation, registry publication, prereleases, and linked version groups are not implemented.
 
 ## Development
 
@@ -291,7 +357,7 @@ The repository contains one Rust Cargo package and one Python distribution that 
 - `python/changenote/`: Python wrapper module for the Rust CLI.
 - `python/tests/`: wrapper tests.
 - `.changenote/`: repository-level notes and release configuration.
-- `action.yml`, `publish/action.yml`: reusable Linux GitHub Actions.
+- `action.yml`, `publish/action.yml`, `preview/action.yml`: reusable Linux GitHub Actions.
 - `scripts/action/`, `tests/actions/`: Action scripts and local Git/mock GitHub tests.
 
 Run checks from the repository root:

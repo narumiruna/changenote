@@ -52,6 +52,7 @@ listing=$(remote_git ls-remote --heads "$remote_url" "refs/heads/$branch")
 [[ $(awk '{print $1}' <<< "$listing") == "$expected_head" ]] || fail 'Release branch moved after generation.'
 jq -r --arg marker "$marker" --arg base "$base" '
   def changes:
+    if (.notes | length) == 0 then "Released with its fixed version group; no direct changes." else
     . as $release |
     ["major", "minor", "patch"] | map(
       . as $bump |
@@ -61,7 +62,7 @@ jq -r --arg marker "$marker" --arg base "$base" '
       ] |
       select(length > 0) |
       "### " + ($bump | ascii_upcase[0:1]) + $bump[1:] + " Changes\n\n" + join("\n")
-    ) | join("\n\n");
+    ) | join("\n\n") end;
   $marker + "\n\nThis PR was opened by the [changenote release](https://github.com/narumiruna/changenote) GitHub Action. Merge this PR when you are ready to release these versions. Use the publication Action to publish tags and GitHub Releases; registry publication requires a separate workflow. If you are not ready to release, leave this PR open. New change notes on `" + $base + "` update this PR.\n\n# Releases\n\n" +
   (map("## " + .package + "@" + .version + "\n\n" + changes) | join("\n\n"))
 ' "$temp/details.json" > "$temp/body.md"

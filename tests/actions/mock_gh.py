@@ -81,6 +81,8 @@ if args[0] == "api":
         pr.update({k: v for k, v in payload.items() if k in ("state", "title", "body")})
         emit(pr)
     if "/releases?" in endpoint:
+        if state.get("releases_api_fail"):
+            error("Release API unavailable")
         emit([state["releases"]])
 if args[:2] == ["release", "create"]:
     tag = args[2]
