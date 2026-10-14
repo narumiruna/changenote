@@ -51,16 +51,13 @@ fn items<'a>(notes: impl Iterator<Item = &'a str>) -> String {
         .join("\n\n")
 }
 
-// Only ATX SemVer headings outside fenced or indented code start a release.
+// Only ATX SemVer headings outside code and generated note items start a release.
 fn first_version_heading(text: &str) -> Option<usize> {
-    version_headings(text, 3)
-        .first()
-        .map(|(start, _, _)| *start)
+    version_headings(text).first().map(|(start, _, _)| *start)
 }
 
 pub(crate) fn extract(text: &str, version: &Version) -> Result<String> {
-    // Generated release headings are unindented; indented headings belong to notes.
-    let headings = version_headings(text, 0);
+    let headings = version_headings(text);
     let matches: Vec<_> = headings
         .iter()
         .enumerate()
@@ -83,15 +80,26 @@ pub(crate) fn extract(text: &str, version: &Version) -> Result<String> {
     Ok(format!("{body}\n"))
 }
 
-fn version_headings(text: &str, max_heading_indent: usize) -> Vec<(usize, usize, Version)> {
+fn version_headings(text: &str) -> Vec<(usize, usize, Version)> {
     let mut headings = Vec::new();
     let mut offset = 0;
     let mut fence: Option<(u8, usize)> = None;
+    let mut in_note = false;
     for line in text.split_inclusive('\n') {
         let text = line.trim_end_matches(['\r', '\n']);
         let indent = text.bytes().take_while(|b| *b == b' ').count();
+        let note_start = fence.is_none() && indent == 0 && text.starts_with("- ");
+        // Generated note continuations, including blank lines, have two spaces.
+        // An unindented separator ends the item, even before an indented entry.
+        if fence.is_none() && indent == 0 {
+            in_note = note_start;
+        }
         if indent <= 3 {
-            let text = &text[indent..];
+            let text = if note_start {
+                &text[2..]
+            } else {
+                &text[indent..]
+            };
             let marker = text.as_bytes().first().copied();
             if matches!(marker, Some(b'`' | b'~')) {
                 let marker = marker.unwrap();
@@ -103,7 +111,7 @@ fn version_headings(text: &str, max_heading_indent: usize) -> Vec<(usize, usize,
                 } else if count >= 3 && (marker != b'`' || !text[count..].contains('`')) {
                     fence = Some((marker, count));
                 }
-            } else if fence.is_none() && indent <= max_heading_indent {
+            } else if fence.is_none() && !in_note {
                 let count = text.bytes().take_while(|b| *b == b'#').count();
                 if (1..=6).contains(&count)
                     && text

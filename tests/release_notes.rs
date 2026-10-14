@@ -110,6 +110,58 @@ fn generated_nested_semver_headings_do_not_split_or_duplicate_entries() {
 }
 
 #[test]
+fn indented_history_entries_are_separate_from_generated_note_headings() {
+    for indent in [" ", "  ", "   "] {
+        for newline in ["\n", "\r\n"] {
+            let dir = project();
+            let history = format!("# Changelog\n\nIntro\n\n{indent}## 1.0.0\n\nOld entry\n\n{indent}## 0.9.0\n\nOlder entry\n").replace('\n', newline);
+            fs::write(dir.path().join("CHANGELOG.md"), history).unwrap();
+            let message =
+                "Details\n\n## 1.1.0\n\nKeep current heading\n\n## 1.0.0\n\nKeep old heading";
+            add(
+                dir.path(),
+                "nested",
+                vec!["pkg".into()],
+                Bump::Minor,
+                message,
+            )
+            .unwrap();
+            version(dir.path()).unwrap();
+            let expected = format!("### Minor Changes\n\n- {}\n", message.replace('\n', "\n  "));
+            assert_eq!(
+                release_notes(dir.path(), "pkg", &Version::new(1, 1, 0)).unwrap(),
+                expected
+            );
+            assert_eq!(
+                release_notes(dir.path(), "pkg", &Version::new(1, 0, 0)).unwrap(),
+                "Old entry\n"
+            );
+            assert_eq!(
+                release_notes(dir.path(), "pkg", &Version::new(0, 9, 0)).unwrap(),
+                "Older entry\n"
+            );
+        }
+    }
+}
+
+#[test]
+fn code_fence_at_note_start_does_not_hide_history_entries() {
+    let dir = project();
+    fs::write(dir.path().join("CHANGELOG.md"), "  ## 1.0.0\n\nOld entry\n").unwrap();
+    let message = "```md\n## 1.1.0\n```\n\nKeep the end";
+    add(dir.path(), "code", vec!["pkg".into()], Bump::Minor, message).unwrap();
+    version(dir.path()).unwrap();
+    assert_eq!(
+        release_notes(dir.path(), "pkg", &Version::new(1, 1, 0)).unwrap(),
+        format!("### Minor Changes\n\n- {}\n", message.replace('\n', "\n  "))
+    );
+    assert_eq!(
+        release_notes(dir.path(), "pkg", &Version::new(1, 0, 0)).unwrap(),
+        "Old entry\n"
+    );
+}
+
+#[test]
 fn cli_reads_exact_version_with_root_and_writes_nothing() {
     let dir = project();
     let log = "# Changelog\nIntro\n## 2.0.0\nNew\n## 1.0.0\nOld\n";

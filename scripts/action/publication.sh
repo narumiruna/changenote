@@ -48,7 +48,7 @@ verify_publication_batch() {
     index=$((index + 1))
     package=$(jq -r '.package' <<< "$item")
     version=$(jq -r '.version' <<< "$item")
-    "$cli" release-notes --package "$package" --version "$version" > "$temp/notes/$index.md"
+    "$cli" release-notes --package="$package" --version "$version" > "$temp/notes/$index.md"
   done < <(jq -c '.[]' "$temp/batch.json")
 }
 

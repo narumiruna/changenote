@@ -918,6 +918,8 @@ class Actions(unittest.TestCase):
         self.assertEqual(records[1]["body"], expected[records[1]["tag_name"]])
 
     def test_nested_semver_heading_remains_in_published_body(self):
+        (self.repo / "CHANGELOG.md").write_text("  ## 1.0.0\n\nOld entry\n\n  ## 0.9.0\n\nOlder entry\n")
+        self.commit("indented history")
         message = "Details\n\n## 2.0.0\n\nKeep this section\n\n## 1.0.1\n\nKeep the end"
         self.note(message)
         self.cli("version")
@@ -929,6 +931,25 @@ class Actions(unittest.TestCase):
         self.action("publish")
         self.assertEqual(self.state()["releases"][0]["body"],
                          "### Patch Changes\n\n- " + message.replace("\n", "\n  ") + "\n")
+
+    def test_hyphen_leading_package_name_supports_preview_and_publication(self):
+        name = "--version"
+        (self.repo / ".changenote/config.json").write_text(json.dumps({"packages": {
+            name: {"path": ".", "version_file": "VERSION"},
+        }}))
+        (self.repo / ".changenote/fix.md").write_text("---\n\"--version\": patch\n---\n\nHyphen name fix\n")
+        self.commit("hyphen package name and note")
+        self.cli("version")
+        release = self.commit("release")
+        self.git("push", "origin", "main")
+        _, preview = self.action("preview")
+        self.assertEqual(preview["ready"], "true")
+        self.assertEqual(preview["release-commit"], release)
+        self.assertEqual(json.loads(preview["publication-plan"])[0]["name"], name)
+        _, published = self.action("publish")
+        self.assertEqual(json.loads(published["published-packages"]),
+                         [{"name": name, "version": "1.0.1"}])
+        self.assertEqual(self.state()["releases"][0]["body"], "### Patch Changes\n\n- Hyphen name fix\n")
 
     def test_long_package_name_supports_preview_publication_and_retry(self):
         name = "p" * 300
