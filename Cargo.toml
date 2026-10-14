@@ -1,6 +1,6 @@
 [package]
 name = "changenote"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 description = "Language-independent change notes and releases"
 license = "MIT"
