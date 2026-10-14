@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/narumiruna/changenote/main/schema.json",
   "packages": {
-    "changenote": { "path": ".", "version_file": "VERSION" }
+    "changenote": { "path": ".", "version_file": "Cargo.toml" }
   }
 }
