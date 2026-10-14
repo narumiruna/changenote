@@ -1,3 +1,17 @@
+## 0.3.0
+
+### Minor Changes
+
+- Group changelog notes by their own bump and preserve existing titles, introductions, and prior entries. Publication verifies exact current or legacy release trees for older batches.
+
+- Create one note with independent package bumps using repeatable --major, --minor, and --patch options while retaining the shared-bump CLI and Rust add API.
+
+- Add read-only PR note checks against a Git merge base with JSON reports and explicit release exemptions. Validate committed changes in a clean repository; this is a PR-level check, not per-package coverage.
+
+### Patch Changes
+
+- Replace only the top-level package.json version token, preserving all other bytes. Reject duplicate top-level version keys before writes.
+
 ## 0.2.0
 
 - Support optional $schema metadata in configuration and provide a repository JSON Schema for editor validation and completion.
