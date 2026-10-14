@@ -42,12 +42,13 @@ verify_publication_batch() {
   fi
   git reset --hard "$release"
   # Validate every body before any remote writes, including later batch members.
-  local item package version
+  local item package version index=0
   mkdir -p "$temp/notes"
   while IFS= read -r item; do
+    index=$((index + 1))
     package=$(jq -r '.package' <<< "$item")
     version=$(jq -r '.version' <<< "$item")
-    "$cli" release-notes --package "$package" --version "$version" > "$temp/notes/$package.md"
+    "$cli" release-notes --package "$package" --version "$version" > "$temp/notes/$index.md"
   done < <(jq -c '.[]' "$temp/batch.json")
 }
 

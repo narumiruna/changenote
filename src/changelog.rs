@@ -53,11 +53,14 @@ fn items<'a>(notes: impl Iterator<Item = &'a str>) -> String {
 
 // Only ATX SemVer headings outside fenced or indented code start a release.
 fn first_version_heading(text: &str) -> Option<usize> {
-    version_headings(text).first().map(|(start, _, _)| *start)
+    version_headings(text, 3)
+        .first()
+        .map(|(start, _, _)| *start)
 }
 
 pub(crate) fn extract(text: &str, version: &Version) -> Result<String> {
-    let headings = version_headings(text);
+    // Generated release headings are unindented; indented headings belong to notes.
+    let headings = version_headings(text, 0);
     let matches: Vec<_> = headings
         .iter()
         .enumerate()
@@ -80,7 +83,7 @@ pub(crate) fn extract(text: &str, version: &Version) -> Result<String> {
     Ok(format!("{body}\n"))
 }
 
-fn version_headings(text: &str) -> Vec<(usize, usize, Version)> {
+fn version_headings(text: &str, max_heading_indent: usize) -> Vec<(usize, usize, Version)> {
     let mut headings = Vec::new();
     let mut offset = 0;
     let mut fence: Option<(u8, usize)> = None;
@@ -100,7 +103,7 @@ fn version_headings(text: &str) -> Vec<(usize, usize, Version)> {
                 } else if count >= 3 && (marker != b'`' || !text[count..].contains('`')) {
                     fence = Some((marker, count));
                 }
-            } else if fence.is_none() {
+            } else if fence.is_none() && indent <= max_heading_indent {
                 let count = text.bytes().take_while(|b| *b == b'#').count();
                 if (1..=6).contains(&count)
                     && text
@@ -142,6 +145,7 @@ mod tests {
         for (old, prefix, suffix) in [
             ("", "", ""),
             ("## 1.0.0\n\nOld\n", "", "## 1.0.0\n\nOld\n"),
+            ("  ## 1.0.0\nOld\n", "", "  ## 1.0.0\nOld\n"),
             (
                 "# Changelog\n\nIntro\n\n## 1.0.0\nOld\n",
                 "# Changelog\n\nIntro\n\n",

@@ -81,6 +81,35 @@ fn generated_groups_use_note_bumps_and_saved_batch_has_only_metadata() {
 }
 
 #[test]
+fn generated_nested_semver_headings_do_not_split_or_duplicate_entries() {
+    for heading_version in ["9.0.0", "1.1.0", "1.0.0"] {
+        let dir = project();
+        fs::write(dir.path().join("CHANGELOG.md"), "## 1.0.0\n\nOld entry\n").unwrap();
+        let message = format!(
+            "Details\n\n## {heading_version}\n\nKeep this section\n\n### {heading_version}\n\nKeep the end"
+        );
+        add(
+            dir.path(),
+            "nested",
+            vec!["pkg".into()],
+            Bump::Minor,
+            &message,
+        )
+        .unwrap();
+        version(dir.path()).unwrap();
+        let expected = format!("### Minor Changes\n\n- {}\n", message.replace('\n', "\n  "));
+        assert_eq!(
+            release_notes(dir.path(), "pkg", &Version::new(1, 1, 0)).unwrap(),
+            expected
+        );
+        assert_eq!(
+            release_notes(dir.path(), "pkg", &Version::new(1, 0, 0)).unwrap(),
+            "Old entry\n"
+        );
+    }
+}
+
+#[test]
 fn cli_reads_exact_version_with_root_and_writes_nothing() {
     let dir = project();
     let log = "# Changelog\nIntro\n## 2.0.0\nNew\n## 1.0.0\nOld\n";

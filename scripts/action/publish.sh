@@ -18,7 +18,9 @@ inspect_publication
 require_publication_ready
 "$cli" tag
 changed='[]'
+index=0
 while IFS= read -r item; do
+  index=$((index + 1))
   tag=$(jq -r '.tag' <<< "$item")
   did_publish=false
   remote_tag "$tag"
@@ -35,8 +37,7 @@ while IFS= read -r item; do
   remote_tag "$tag"
   [[ $tag_sha == "$release" ]] || fail "Remote tag identity changed: $tag"
   if ! jq -e --arg tag "$tag" 'any(.[][]; .tag_name == $tag)' "$temp/releases.json" >/dev/null; then
-    package=$(jq -r '.package' <<< "$item")
-    if gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$tag" --notes-file "$temp/notes/$package.md"; then
+    if gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$tag" --notes-file "$temp/notes/$index.md"; then
       did_publish=true
     else
       # Only a verified existing release is an acceptable race result.
