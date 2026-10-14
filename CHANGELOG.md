@@ -1,3 +1,11 @@
+## 0.6.0
+
+### Minor Changes
+
+- Add optional change note types and configurable changelog sections.
+  Use `add --type` and configure `changelog.sections` to group notes by type independently of SemVer bumps.
+  Upgrade the CLI and Actions together before using typed notes or section configuration.
+
 ## 0.5.1
 
 ### Patch Changes
