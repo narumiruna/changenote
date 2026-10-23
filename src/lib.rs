@@ -10,8 +10,11 @@ pub use planning::{
     status_with_note_sections,
 };
 mod json_value;
-pub use check::{CheckReport, check};
+pub use check::{CheckReport, Coverage, CoverageReport, check, check_with_coverage};
+mod doctor;
+pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor};
 mod lockfile;
+mod transaction;
 mod version_file;
 
 use anyhow::{Context, Result, ensure};
@@ -155,16 +158,39 @@ fn checked_path(root: &Path, path: &Path) -> Result<PathBuf> {
 struct ConfigFile {
     #[serde(rename = "$schema")]
     schema: Option<String>,
-    packages: BTreeMap<String, Package>,
+    packages: BTreeMap<String, PackageFile>,
     #[serde(default)]
     fixed: Vec<Vec<String>>,
     changelog: Option<sections::ChangelogConfig>,
 }
 
-struct ReleaseConfig {
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PackageFile {
+    path: PathBuf,
+    version_file: PathBuf,
+    #[serde(default)]
+    version_outputs: Vec<PathBuf>,
+    #[serde(default, deserialize_with = "deserialize_tag_prefix")]
+    tag_prefix: Option<String>,
+}
+
+fn deserialize_tag_prefix<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error> {
+    String::deserialize(deserializer).map(Some)
+}
+
+struct PackageOptions {
+    version_outputs: Vec<PathBuf>,
+    tag_prefix: Option<String>,
+}
+
+pub(crate) struct ReleaseConfig {
     config: Config,
     fixed: Vec<Vec<String>>,
     changelog: Option<sections::ChangelogConfig>,
+    package_options: BTreeMap<String, PackageOptions>,
 }
 
 struct NoteData {
@@ -179,7 +205,8 @@ impl std::ops::Deref for NoteData {
     }
 }
 
-/// Validate all configuration, including fixed groups and sections, and return package settings.
+/// Validate all configuration and return only the primary package settings.
+/// Fixed groups, sections, additional outputs, and tag prefixes are not retained in this view.
 pub fn load_config(root: &Path) -> Result<Config> {
     Ok(load_release_config(root)?.config)
 }
@@ -190,9 +217,27 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
     if let Some(changelog) = &file.changelog {
         changelog.validate()?;
     }
+    let mut packages = BTreeMap::new();
+    let mut package_options = BTreeMap::new();
+    for (name, package) in file.packages {
+        packages.insert(
+            name.clone(),
+            Package {
+                path: package.path,
+                version_file: package.version_file,
+            },
+        );
+        package_options.insert(
+            name,
+            PackageOptions {
+                version_outputs: package.version_outputs,
+                tag_prefix: package.tag_prefix,
+            },
+        );
+    }
     let config = Config {
         schema: file.schema,
-        packages: file.packages,
+        packages,
     };
     let mut members = std::collections::BTreeSet::new();
     for group in &file.fixed {
@@ -257,13 +302,128 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
             files.insert(changelog_target),
             "package output paths must not overlap"
         );
-        read_version(&file)?;
+        let version = read_version(&file)?;
+        let options = &package_options[name];
+        if let Some(prefix) = &options.tag_prefix {
+            validate_tag(&format!("{prefix}{version}"))?;
+        }
+        for output in &options.version_outputs {
+            relative(output)?;
+            let output = checked_path(root, &pkg.path.join(output))?;
+            reject_output_symlinks(root, &output)?;
+            ensure!(
+                output.is_file(),
+                "version output must be a file: {}",
+                output.display()
+            );
+            let target = output.canonicalize()?;
+            ensure!(
+                !target.starts_with(root.canonicalize()?.join(".changenote")),
+                "version outputs cannot be in .changenote"
+            );
+            ensure!(
+                files.insert(target),
+                "package output paths must not overlap"
+            );
+            ensure!(
+                read_version(&output)? == version,
+                "version output does not match primary version: {}",
+                output.display()
+            );
+        }
     }
     Ok(ReleaseConfig {
         config,
         fixed: file.fixed,
         changelog: file.changelog,
+        package_options,
     })
+}
+
+fn reject_output_symlinks(root: &Path, path: &Path) -> Result<()> {
+    let root = root.canonicalize()?;
+    let mut current = root.clone();
+    for component in path.strip_prefix(&root)?.components() {
+        current.push(component);
+        ensure!(
+            !fs::symlink_metadata(&current)?.file_type().is_symlink(),
+            "version output cannot contain a symlink: {}",
+            current.display()
+        );
+    }
+    Ok(())
+}
+
+/// Return checked absolute paths for every primary and additional release version file.
+pub(crate) fn release_version_paths(
+    root: &Path,
+    config: &ReleaseConfig,
+    releases: &[Release],
+) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    for release in releases {
+        let package = config
+            .config
+            .packages
+            .get(&release.package)
+            .context("unknown release package")?;
+        for path in std::iter::once(&package.version_file)
+            .chain(&config.package_options[&release.package].version_outputs)
+        {
+            paths.push(checked_path(root, &package.path.join(path))?);
+        }
+    }
+    Ok(paths)
+}
+
+// Match Git's full ref-name rules without requiring a Git executable for planning.
+fn validate_tag(tag: &str) -> Result<()> {
+    ensure!(
+        !tag.is_empty()
+            && !tag.starts_with('-')
+            && !tag.ends_with('.')
+            && !tag.contains("..")
+            && !tag.contains("@{")
+            && !tag
+                .bytes()
+                .any(|b| b <= b' ' || b == 127 || b"~^:?*[\\\\".contains(&b))
+            && tag
+                .split('/')
+                .all(|part| !part.is_empty() && !part.starts_with('.') && !part.ends_with(".lock")),
+        "invalid release tag: {tag}"
+    );
+    Ok(())
+}
+
+fn tag_namespace_conflict(a: &str, b: &str) -> bool {
+    a.strip_prefix(b)
+        .is_some_and(|suffix| suffix.starts_with('/'))
+        || b.strip_prefix(a)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn reserve_release_tag(tags: &mut std::collections::BTreeSet<String>, tag: &str) -> Result<()> {
+    ensure!(!tags.contains(tag), "duplicate release tag: {tag}");
+    for other in tags.iter() {
+        ensure!(
+            !tag_namespace_conflict(tag, other),
+            "release tag namespace conflict: {tag} and {other}"
+        );
+    }
+    tags.insert(tag.to_owned());
+    Ok(())
+}
+
+fn release_tag(config: &ReleaseConfig, package: &str, version: &Version) -> Result<String> {
+    let tag = if let Some(prefix) = &config.package_options[package].tag_prefix {
+        format!("{prefix}{version}")
+    } else if config.config.packages.len() == 1 {
+        format!("v{version}")
+    } else {
+        format!("changenote/{package}@v{version}")
+    };
+    validate_tag(&tag)?;
+    Ok(tag)
 }
 
 pub fn parse_note(content: &str) -> Result<Note> {
@@ -368,14 +528,58 @@ pub fn init(root: &Path, name: &str, version: Version) -> Result<()> {
         "only stable SemVer versions are supported"
     );
     ensure!(
-        !root.join(".changenote").exists(),
-        ".changenote already exists"
+        !root.join("VERSION").try_exists()? && !root.join("VERSION").is_symlink(),
+        "VERSION already exists; use init --version-file VERSION"
+    );
+    create_initial_config(root, name, Path::new("VERSION"), Some(version))
+}
+
+/// Adopt an existing version file without changing its bytes.
+/// The source directory becomes the configured package directory.
+pub fn init_with_version_file(root: &Path, name: &str, version_file: &Path) -> Result<()> {
+    safe_name(name)?;
+    let source = checked_path(root, version_file)?;
+    reject_output_symlinks(root, &source)?;
+    ensure!(
+        !fs::symlink_metadata(&source)?.file_type().is_symlink() && source.is_file(),
+        "version file must be a regular file, not a symlink"
     );
     ensure!(
-        !root.join("VERSION").exists(),
-        "VERSION already exists; configure it manually"
+        !source
+            .canonicalize()?
+            .starts_with(root.canonicalize()?.join(".changenote")),
+        "version files cannot be in .changenote"
     );
-    fs::create_dir(root.join(".changenote"))?;
+    ensure!(
+        version_file
+            .file_name()
+            .is_some_and(|name| name != "CHANGELOG.md"),
+        "version file cannot overlap the changelog"
+    );
+    read_version(&source)?;
+    let directory = version_file.parent().context("missing version directory")?;
+    let changelog = checked_path(root, &directory.join("CHANGELOG.md"))?;
+    match fs::symlink_metadata(&changelog) {
+        Ok(metadata) => ensure!(
+            metadata.is_file() && !metadata.file_type().is_symlink(),
+            "changelog must be a regular file, not a symlink"
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    create_initial_config(root, name, version_file, None)
+}
+
+fn create_initial_config(
+    root: &Path,
+    name: &str,
+    version_file: &Path,
+    initial_version: Option<Version>,
+) -> Result<()> {
+    let directory = version_file
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     let config = Config {
         schema: Some(
             "https://raw.githubusercontent.com/narumiruna/changenote/main/schema.json".to_owned(),
@@ -383,16 +587,60 @@ pub fn init(root: &Path, name: &str, version: Version) -> Result<()> {
         packages: BTreeMap::from([(
             name.to_owned(),
             Package {
-                path: ".".into(),
-                version_file: "VERSION".into(),
+                path: directory.to_owned(),
+                version_file: version_file
+                    .file_name()
+                    .context("missing version filename")?
+                    .into(),
             },
         )]),
     };
-    fs::write(
-        root.join(".changenote/config.json"),
-        format!("{}\n", serde_json::to_string_pretty(&config)?),
-    )?;
-    fs::write(root.join("VERSION"), format!("{version}\n"))?;
+    let content = format!("{}\n", serde_json::to_string_pretty(&config)?);
+    let notes_directory = root.join(".changenote");
+    fs::create_dir(&notes_directory)
+        .context("cannot create .changenote; it must not already exist")?;
+    let config_path = notes_directory.join("config.json");
+    let version_path = root.join("VERSION");
+    let mut config_created = false;
+    let mut version_created = false;
+    let result = (|| -> Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&config_path)?;
+        config_created = true;
+        file.write_all(content.as_bytes())?;
+        if let Some(version) = initial_version {
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&version_path)?;
+            version_created = true;
+            file.write_all(format!("{version}\n").as_bytes())?;
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let mut failures = Vec::new();
+        for (path, created) in [
+            (&config_path, config_created),
+            (&version_path, version_created),
+        ] {
+            if created && let Err(cleanup) = fs::remove_file(path) {
+                failures.push(format!("{}: {cleanup}", path.display()));
+            }
+        }
+        if let Err(cleanup) = fs::remove_dir(&notes_directory) {
+            failures.push(format!("{}: {cleanup}", notes_directory.display()));
+        }
+        if !failures.is_empty() {
+            return Err(error.context(format!(
+                "initialization cleanup failed: {}",
+                failures.join("; ")
+            )));
+        }
+        return Err(error);
+    }
     Ok(())
 }
 
@@ -519,13 +767,14 @@ pub fn version_with_output(
                 .any(|r| release_config.fixed.iter().any(|g| g.contains(&r.package))),
         "legacy output does not support active fixed groups"
     );
-    let config = release_config.config;
+    let config = &release_config.config;
     if releases.is_empty() {
         return Ok(releases);
     }
-    // Prepare every output before changing any input. Filesystem failures still require Git recovery.
+    // Prepare every output before changing any input.
+    let version_paths = release_version_paths(root, &release_config, &releases)?;
     let locks = if sync_lockfiles {
-        lockfile::discover(root, &config, &releases)?
+        lockfile::discover_paths(root, &version_paths)?
     } else {
         Vec::new()
     };
@@ -544,9 +793,12 @@ pub fn version_with_output(
             path,
             changelog::render_sections(release, &old, legacy, &detail.note_sections),
         ));
-        let version_path = checked_path(root, &pkg.path.join(&pkg.version_file))?;
-        let content = version_content(&version_path, &release.version, legacy)?;
-        manifests.push((version_path, content));
+        for version_path in
+            release_version_paths(root, &release_config, std::slice::from_ref(release))?
+        {
+            let content = version_content(&version_path, &release.version, legacy)?;
+            manifests.push((version_path, content));
+        }
     }
     writes.push((
         checked_path(root, Path::new(".changenote/releases.json"))?,
@@ -557,13 +809,22 @@ pub fn version_with_output(
             )?
         ),
     ));
-    lockfile::apply(&manifests, &locks)?;
-    for (path, content) in writes {
-        fs::write(path, content)?;
-    }
-    for (path, _) in notes {
-        fs::remove_file(path)?;
-    }
+    let paths: Vec<_> = version_paths
+        .into_iter()
+        .chain(locks.iter().map(|lock| lock.path.clone()))
+        .chain(writes.iter().map(|(path, _)| path.clone()))
+        .chain(notes.iter().map(|(path, _)| path.clone()))
+        .collect();
+    transaction::apply(&paths, || {
+        lockfile::apply(&manifests, &locks)?;
+        for (path, content) in writes {
+            fs::write(path, content)?;
+        }
+        for (path, _) in notes {
+            fs::remove_file(path)?;
+        }
+        Ok(())
+    })?;
     Ok(releases)
 }
 
@@ -578,7 +839,8 @@ fn git(root: &Path, args: &[&str]) -> Result<String> {
 }
 
 pub fn tag(root: &Path) -> Result<Vec<String>> {
-    let config = load_config(root)?;
+    let release_config = load_release_config(root)?;
+    let config = &release_config.config;
     ensure!(
         git(root, &["status", "--porcelain"])?.is_empty(),
         "commit all changes before tagging"
@@ -588,7 +850,12 @@ pub fn tag(root: &Path) -> Result<Vec<String>> {
         Path::new(".changenote/releases.json"),
     )?)?)?;
     let head = git(root, &["rev-parse", "HEAD"])?;
+    let existing_tags = git(
+        root,
+        &["for-each-ref", "--format=%(refname:strip=2)", "refs/tags"],
+    )?;
     let mut pending = Vec::new();
+    let mut tags = std::collections::BTreeSet::new();
     for release in releases {
         let pkg = config
             .packages
@@ -598,12 +865,17 @@ pub fn tag(root: &Path) -> Result<Vec<String>> {
             read_version(&root.join(&pkg.path).join(&pkg.version_file))? == release.version,
             "release version does not match version file"
         );
-        let expected = if config.packages.len() == 1 {
-            format!("v{}", release.version)
-        } else {
-            format!("changenote/{}@v{}", release.package, release.version)
-        };
+        validate_tag(&release.tag)?;
+        let expected = release_tag(&release_config, &release.package, &release.version)?;
         ensure!(release.tag == expected, "invalid release tag");
+        reserve_release_tag(&mut tags, &release.tag)?;
+        for existing in existing_tags.lines() {
+            ensure!(
+                !tag_namespace_conflict(&release.tag, existing),
+                "release tag namespace conflicts with existing tag: {} and {existing}",
+                release.tag
+            );
+        }
         let existing = git(root, &["tag", "--list", &release.tag])?;
         if !existing.is_empty() {
             ensure!(

@@ -1,0 +1,37 @@
+name: Changenote PR Check
+description: Check committed PR notes and report all pending releases without writes (Linux).
+inputs:
+  since:
+    description: Available Git base ref for the PR comparison. The caller must provide the required history.
+    required: true
+  coverage:
+    description: Note coverage policy, package or pr.
+    default: package
+  skip-release:
+    description: Explicit release exemption. Requires a nonempty reason when true.
+    default: 'false'
+  reason:
+    description: Reason for the explicit release exemption. Use only with skip-release.
+    default: ''
+outputs:
+  check-report:
+    description: Validated JSON report for the PR comparison, including a missing-note failure.
+    value: ${{ steps.check.outputs.check-report }}
+  release-plan:
+    description: JSON plan for all pending notes, not only notes changed in this PR.
+    value: ${{ steps.check.outputs.release-plan }}
+  passed:
+    description: JSON boolean for the PR check. Unset if report validation fails.
+    value: ${{ steps.check.outputs.passed }}
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        INPUT_SINCE: ${{ inputs.since }}
+        INPUT_COVERAGE: ${{ inputs.coverage }}
+        INPUT_SKIP_RELEASE: ${{ inputs.skip-release }}
+        INPUT_REASON: ${{ inputs.reason }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/../scripts/action/check.sh"

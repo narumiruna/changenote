@@ -1,8 +1,8 @@
-use anyhow::Result;
-use changenote::Bump;
+use anyhow::{Context, Result};
+use changenote::{Bump, Coverage};
 use clap::{Parser, Subcommand};
 use semver::Version;
-use std::path::PathBuf;
+use std::{io::Read, path::PathBuf};
 
 #[derive(Parser)]
 #[command(version, about = "Language-independent change notes and releases")]
@@ -15,12 +15,16 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Create configuration and a language-independent VERSION file.
+    /// Create configuration with a new VERSION file or an existing version source.
     Init {
         #[arg(long)]
         name: String,
-        #[arg(long, default_value = "0.0.0")]
-        version: Version,
+        /// Initial version for a new VERSION file (default: 0.0.0).
+        #[arg(long, conflicts_with = "version_file")]
+        version: Option<Version>,
+        /// Adopt an existing source relative to --root, without changing it.
+        #[arg(long, conflicts_with = "version")]
+        version_file: Option<PathBuf>,
     },
     /// Add a Markdown note without an interactive prompt.
     Add {
@@ -39,8 +43,21 @@ enum Commands {
         /// Repeat for each package requiring a patch bump.
         #[arg(long)]
         patch: Vec<String>,
-        #[arg(short, long)]
-        message: String,
+        #[arg(
+            short,
+            long,
+            required_unless_present = "message_file",
+            conflicts_with = "message_file"
+        )]
+        message: Option<String>,
+        /// Read Markdown from a file, or from stdin when PATH is -.
+        #[arg(
+            long,
+            value_name = "PATH",
+            required_unless_present = "message",
+            conflicts_with = "message"
+        )]
+        message_file: Option<PathBuf>,
         /// Classify this note independently of its SemVer bump.
         #[arg(long = "type")]
         kind: Option<String>,
@@ -61,16 +78,20 @@ enum Commands {
         include_note_sections: bool,
     },
     /// Check committed PR changes against a merge base; requires a clean Git tree.
-    /// This is a PR-level note check, not per-package coverage. Prints JSON; writes no files.
+    /// Prints JSON without writes. Package coverage requires direct notes for each changed package.
     Check {
         #[arg(long)]
         since: String,
+        #[arg(long, value_enum, default_value = "pr")]
+        coverage: Coverage,
         /// Exempt this PR from the missing-note rule, not input validation.
         #[arg(long, requires = "reason")]
         skip_release: bool,
         #[arg(long, requires = "skip_release")]
         reason: Option<String>,
     },
+    /// Report local release prerequisites without changing files or running package managers.
+    Doctor,
     /// Apply the plan, update changelogs, and consume notes.
     Version {
         /// Reconstruct older release trees. Reserved for the publication Action.
@@ -94,7 +115,21 @@ enum Commands {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Init { name, version } => changenote::init(&cli.root, &name, version)?,
+        Commands::Init {
+            name,
+            version,
+            version_file,
+        } => {
+            if let Some(path) = version_file {
+                changenote::init_with_version_file(&cli.root, &name, &path)?;
+            } else {
+                changenote::init(
+                    &cli.root,
+                    &name,
+                    version.unwrap_or_else(|| Version::new(0, 0, 0)),
+                )?;
+            }
+        }
         Commands::Add {
             name,
             package,
@@ -103,8 +138,24 @@ fn run() -> Result<()> {
             minor,
             patch,
             message,
+            message_file,
             kind,
         } => {
+            let message = if let Some(path) = message_file {
+                if path == std::path::Path::new("-") {
+                    let mut text = String::new();
+                    std::io::stdin()
+                        .read_to_string(&mut text)
+                        .context("cannot read note message from stdin")?;
+                    text
+                } else {
+                    std::fs::read_to_string(&path).with_context(|| {
+                        format!("cannot read note message from {}", path.display())
+                    })?
+                }
+            } else {
+                message.context("a note message is required")?
+            };
             let mut changes: Vec<_> = package.into_iter().map(|p| (p, bump.unwrap())).collect();
             for (packages, bump) in [
                 (major, Bump::Major),
@@ -149,14 +200,33 @@ fn run() -> Result<()> {
         }
         Commands::Check {
             since,
+            coverage,
             skip_release,
             reason,
         } => {
-            let report = changenote::check(&cli.root, &since, skip_release, reason.as_deref())?;
+            let report = changenote::check_with_coverage(
+                &cli.root,
+                &since,
+                skip_release,
+                reason.as_deref(),
+                coverage,
+            )?;
+            let output = match coverage {
+                Coverage::Pr => serde_json::to_string_pretty(&report.report)?,
+                Coverage::Package => serde_json::to_string_pretty(&report)?,
+            };
+            println!("{output}");
+            anyhow::ensure!(
+                report.report.passed,
+                "changed packages lack the required note coverage; add a note or use --skip-release --reason"
+            );
+        }
+        Commands::Doctor => {
+            let report = changenote::doctor(&cli.root);
             println!("{}", serde_json::to_string_pretty(&report)?);
             anyhow::ensure!(
                 report.passed,
-                "changed packages have no PR note; add a note or use --skip-release --reason"
+                "local release checks failed; inspect the doctor report"
             );
         }
         Commands::Version {
