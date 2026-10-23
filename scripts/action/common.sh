@@ -61,9 +61,11 @@ checkout_work() {
 }
 
 stage_release() {
-  local plan=$1 path directory lock
-  local paths=(.changenote/releases.json)
+  local plan=$1 path directory lock component
+  local paths=(.changenote/releases.json) unique=()
+  local -A seen=()
   while IFS= read -r -d '' path; do
+    paths+=("$path")
     case ${path##*/} in
       Cargo.toml) lock=Cargo.lock ;;
       pyproject.toml) lock=uv.lock ;;
@@ -80,18 +82,30 @@ stage_release() {
       directory=$(dirname -- "$directory")
     done
   done < <(jq -j --slurpfile config .changenote/config.json \
-    '.[] | $config[0].packages[.package] | .path + "/" + .version_file + "\u0000"' "$plan")
+    '[.[] | $config[0].packages[.package] | .path as $directory |
+      (.version_file, (.version_outputs // [])[]) |
+      ($directory + "/" + . | split("/") | map(select(. != "." and . != "")) | join("/"))]
+      | unique[] + "\u0000"' "$plan")
   while IFS= read -r -d '' path; do
     paths+=("$path")
   done < <(jq -j --slurpfile config .changenote/config.json \
-    '.[] | $config[0].packages[.package] | (.path + "/" + .version_file + "\u0000"), (.path + "/CHANGELOG.md\u0000")' "$plan")
+    '.[] | $config[0].packages[.package] | .path + "/CHANGELOG.md\u0000"' "$plan")
   while IFS= read -r -d '' path; do
     if [[ $path == .changenote/*.md && ${path#.changenote/} != */* ]]; then paths+=("$path"); fi
   done < <(git diff --diff-filter=D --name-only -z)
   for path in "${paths[@]}"; do
-    [[ ! -L $path ]] || fail "Action output paths cannot be symlinks: $path"
+    while [[ $path == ./* ]]; do path=${path#./}; done
+    [[ -z ${seen[$path]+present} ]] || continue
+    seen[$path]=1
+    # Check ancestors too: Git must not stage outputs through directory symlinks.
+    component=$path
+    while [[ $component != . ]]; do
+      [[ ! -L $component ]] || fail "Action output paths cannot be symlinks: $path"
+      component=$(dirname -- "$component")
+    done
+    unique+=("$path")
   done
-  git --literal-pathspecs add -- "${paths[@]}"
+  git --literal-pathspecs add -- "${unique[@]}"
 }
 
 # Read the remote's peeled tag identity. Never overwrite a local tag to hide a conflict.

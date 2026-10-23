@@ -125,18 +125,16 @@ pub(crate) fn plan(
             targets.insert(name.clone(), (bump, version.clone(), Some(cause.clone())));
         }
     }
-    Ok(targets
+    let mut tags = std::collections::BTreeSet::new();
+    targets
         .into_iter()
         .map(|(name, (bump, version, fixed_group))| {
             let direct: Vec<_> = notes
                 .iter()
                 .filter_map(|(p, n)| n.packages.get(&name).map(|b| (p, n, *b)))
                 .collect();
-            let tag = if config.config.packages.len() == 1 {
-                format!("v{version}")
-            } else {
-                format!("changenote/{name}@v{version}")
-            };
+            let tag = crate::release_tag(config, &name, &version)?;
+            crate::reserve_release_tag(&mut tags, &tag)?;
             let note_types = direct
                 .iter()
                 .map(|(_, n, _)| n.kind.clone())
@@ -152,7 +150,7 @@ pub(crate) fn plan(
             };
             let note_sections =
                 crate::sections::group(&release, &note_types, config.changelog.as_ref());
-            SectionedRelease {
+            Ok(SectionedRelease {
                 note_types,
                 note_sections,
                 detail: DetailedRelease {
@@ -160,9 +158,9 @@ pub(crate) fn plan(
                     fixed_group,
                     release,
                 },
-            }
+            })
         })
-        .collect())
+        .collect()
 }
 
 // JSON uses forward slashes on every platform; Rust callers retain native paths.

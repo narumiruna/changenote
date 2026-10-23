@@ -75,6 +75,16 @@
           "description": "Version file relative to the package directory. Use VERSION, pyproject.toml, Cargo.toml, or package.json. Parent components are not allowed.",
           "type": "string",
           "minLength": 1
+        },
+        "version_outputs": {
+          "description": "Additional version files relative to the package directory. Each must match the primary version. Parent components, symlinks, and overlapping output paths are not allowed; the CLI checks these rules.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "tag_prefix": {
+          "description": "Literal prefix before the full release version, for example sdk/v. The CLI validates the complete Git tag and rejects duplicate planned tags. Without this field, the default tag format is unchanged.",
+          "type": "string"
         }
       }
     }

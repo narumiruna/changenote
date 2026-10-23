@@ -1,4 +1,4 @@
-use changenote::{Bump, add, check};
+use changenote::{Bump, Coverage, add, check, check_with_coverage};
 use std::{
     collections::BTreeMap,
     fs,
@@ -111,6 +111,22 @@ fn pr_level_rules_and_exemptions_are_read_only() {
     let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(report["changed_packages"], serde_json::json!(["pkg"]));
     assert_eq!(report["note_paths"], serde_json::json!([]));
+    assert_eq!(
+        report
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        [
+            "merge_base",
+            "changed_packages",
+            "note_paths",
+            "outside_paths",
+            "skip_reason",
+            "passed"
+        ]
+    );
     let out = cli(
         root,
         &[
@@ -194,6 +210,12 @@ fn modified_and_renamed_notes_count_but_deleted_notes_do_not() {
             cli(root, &["check", "--since", "base"]).status.success(),
             mode != "delete"
         );
+        assert_eq!(
+            cli(root, &["check", "--since", "base", "--coverage", "package"])
+                .status
+                .success(),
+            mode != "delete"
+        );
     }
 }
 
@@ -240,6 +262,141 @@ fn deepest_package_path_and_component_boundaries_handle_renames_and_deletes() {
 }
 
 #[test]
+fn strict_coverage_requires_each_changed_package_in_changed_notes() {
+    let dir = project();
+    let root = dir.path();
+    write(root, "packages/pkg/old.txt", "changed");
+    add(
+        root,
+        "unrelated",
+        vec!["nested".into()],
+        Bump::Patch,
+        "Nested change",
+    )
+    .unwrap();
+    commit(root);
+    assert!(cli(root, &["check", "--since", "base"]).status.success());
+    let out = cli(root, &["check", "--since", "base", "--coverage", "pr"]);
+    assert!(out.status.success());
+    let default: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(default.get("covered_packages").is_none());
+    let out = cli(root, &["check", "--since", "base", "--coverage", "package"]);
+    assert_eq!(out.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["covered_packages"], serde_json::json!([]));
+    assert_eq!(report["uncovered_packages"], serde_json::json!(["pkg"]));
+    assert!(
+        report.get("report").is_none(),
+        "the base report is flattened"
+    );
+
+    write(root, "packages/pkg/nested/old.txt", "changed too");
+    commit(root);
+    let before = snapshot(root);
+    let report = check_with_coverage(root, "base", false, None, Coverage::Package).unwrap();
+    assert!(!report.report.passed);
+    assert_eq!(report.covered_packages, ["nested"]);
+    assert_eq!(report.uncovered_packages, ["pkg"]);
+    assert_eq!(snapshot(root), before);
+
+    write(
+        root,
+        ".changenote/old.md",
+        "---\npkg: patch\n---\n\nUpdated direct assignment\n",
+    );
+    commit(root);
+    let out = cli(root, &["check", "--since", "base", "--coverage", "package"]);
+    assert!(out.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        report["covered_packages"],
+        serde_json::json!(["nested", "pkg"])
+    );
+    assert_eq!(report["uncovered_packages"], serde_json::json!([]));
+}
+
+#[test]
+fn strict_coverage_accepts_mixed_notes_but_not_fixed_group_propagation() {
+    let dir = project();
+    let root = dir.path();
+    write(
+        root,
+        ".changenote/config.json",
+        r#"{"packages":{"pkg":{"path":"packages/pkg","version_file":"VERSION"},"nested":{"path":"packages/pkg/nested","version_file":"VERSION"}},"fixed":[["pkg","nested"]]}"#,
+    );
+    write(root, "packages/pkg/old.txt", "changed");
+    write(root, "packages/pkg/nested/old.txt", "changed");
+    add(
+        root,
+        "direct",
+        vec!["pkg".into()],
+        Bump::Patch,
+        "Direct change",
+    )
+    .unwrap();
+    commit(root);
+    let report = check_with_coverage(root, "base", false, None, Coverage::Package).unwrap();
+    assert!(!report.report.passed);
+    assert_eq!(report.covered_packages, ["pkg"]);
+    assert_eq!(report.uncovered_packages, ["nested"]);
+    write(
+        root,
+        ".changenote/direct.md",
+        "---\npkg: patch\nnested: minor\n---\n\nBoth packages\n",
+    );
+    commit(root);
+    assert!(
+        cli(root, &["check", "--since", "base", "--coverage", "package"])
+            .status
+            .success()
+    );
+}
+
+#[test]
+fn strict_exemptions_bypass_coverage_but_still_validate() {
+    let dir = project();
+    let root = dir.path();
+    write(root, "packages/pkg/old.txt", "changed");
+    commit(root);
+    let args = [
+        "check",
+        "--since",
+        "base",
+        "--coverage",
+        "package",
+        "--skip-release",
+        "--reason",
+        "Docs",
+    ];
+    let out = cli(root, &args);
+    assert!(out.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["uncovered_packages"], serde_json::json!(["pkg"]));
+    write(
+        root,
+        ".changenote/invalid.md",
+        "---\nunknown: patch\n---\n\nInvalid package\n",
+    );
+    commit(root);
+    let out = cli(root, &args);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("unknown package"));
+    fs::remove_file(root.join(".changenote/invalid.md")).unwrap();
+    write(root, "packages/pkg/VERSION", "18446744073709551615.0.0\n");
+    write(
+        root,
+        ".changenote/old.md",
+        "---\npkg: major\n---\n\nOverflow\n",
+    );
+    commit(root);
+    let out = cli(root, &args);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("version overflow"));
+}
+
+#[test]
 fn repository_root_paths_and_nested_root_rejection() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("repo 中文 ");
@@ -253,6 +410,30 @@ fn repository_root_paths_and_nested_root_rejection() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("Git repository root"));
     assert!(check(dir.path(), "HEAD", false, None).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn check_does_not_execute_git_fsmonitor_hooks() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = project();
+    let root = dir.path();
+    let hook = root.join(".git/fsmonitor-hook");
+    let sentinel = root.join(".git/executed");
+    fs::write(
+        &hook,
+        format!("#!/bin/sh\nprintf executed > '{}'\n", sentinel.display()),
+    )
+    .unwrap();
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    git(root, &["config", "core.fsmonitor", hook.to_str().unwrap()]);
+    let output = cli(root, &["check", "--since", "base", "--coverage", "package"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!sentinel.exists());
 }
 
 #[test]

@@ -1,5 +1,5 @@
 //! Refresh existing lockfiles after all configured manifests have been updated.
-use crate::{Config, Release, checked_path};
+use crate::checked_path;
 use anyhow::{Context, Result, ensure};
 use std::{
     collections::BTreeMap,
@@ -15,38 +15,37 @@ pub(crate) struct Lockfile {
     args: &'static [&'static str],
 }
 
-pub(crate) fn discover(
-    root: &Path,
-    config: &Config,
-    releases: &[Release],
-) -> Result<Vec<Lockfile>> {
+pub(crate) fn discover_paths(root: &Path, paths: &[PathBuf]) -> Result<Vec<Lockfile>> {
     let root = root.canonicalize()?;
     let mut locks = BTreeMap::new();
-    for release in releases {
-        let package = &config.packages[&release.package];
-        let (name, tool, args): (_, _, &[&str]) =
-            match package.version_file.file_name().and_then(|s| s.to_str()) {
-                Some("Cargo.toml") => (
-                    "Cargo.lock",
-                    "cargo",
-                    &["update", "--workspace", "--offline"],
-                ),
-                Some("pyproject.toml") => ("uv.lock", "uv", &["lock", "--offline"]),
-                Some("package.json") => (
-                    "package-lock.json",
-                    "npm",
-                    &[
-                        "install",
-                        "--package-lock-only",
-                        "--ignore-scripts",
-                        "--offline",
-                        "--no-audit",
-                        "--no-fund",
-                    ],
-                ),
-                _ => continue,
-            };
-        let manifest = checked_path(&root, &package.path.join(&package.version_file))?;
+    for path in paths {
+        let (name, tool, args): (_, _, &[&str]) = match path.file_name().and_then(|s| s.to_str()) {
+            Some("Cargo.toml") => (
+                "Cargo.lock",
+                "cargo",
+                &["update", "--workspace", "--offline"],
+            ),
+            Some("pyproject.toml") => ("uv.lock", "uv", &["lock", "--offline"]),
+            Some("package.json") => (
+                "package-lock.json",
+                "npm",
+                &[
+                    "install",
+                    "--package-lock-only",
+                    "--ignore-scripts",
+                    "--offline",
+                    "--no-audit",
+                    "--no-fund",
+                ],
+            ),
+            _ => continue,
+        };
+        let relative = if path.is_absolute() {
+            path.strip_prefix(&root)?
+        } else {
+            path
+        };
+        let manifest = checked_path(&root, relative)?;
         let mut directory = manifest
             .parent()
             .context("missing manifest directory")?
@@ -62,7 +61,7 @@ pub(crate) fn discover(
                     );
                     let relative = path.strip_prefix(&root)?;
                     checked_path(&root, relative)?;
-                    let owner = directory.join(package.version_file.file_name().unwrap());
+                    let owner = directory.join(manifest.file_name().unwrap());
                     ensure!(
                         owner.is_file() && !fs::symlink_metadata(&owner)?.file_type().is_symlink(),
                         "lockfile manifest must be a regular file: {}",
@@ -99,6 +98,10 @@ pub(crate) fn discover(
 }
 
 impl Lockfile {
+    pub(crate) fn tool(&self) -> &'static str {
+        self.tool
+    }
+
     fn refresh(&self) -> Result<()> {
         let output = Command::new(self.tool)
             .args(self.args)
@@ -117,33 +120,13 @@ impl Lockfile {
     }
 }
 
-/// Restore manifests and lockfiles if a package manager fails. Notes stay intact.
+/// Update all manifests before refreshing each lockfile. The caller provides recovery.
 pub(crate) fn apply(manifests: &[(PathBuf, String)], locks: &[Lockfile]) -> Result<()> {
-    let originals = manifests
-        .iter()
-        .map(|(path, _)| path)
-        .chain(locks.iter().map(|lock| &lock.path))
-        .map(|path| Ok((path, fs::read(path)?)))
-        .collect::<Result<Vec<_>>>()?;
-    let result = (|| {
-        for (path, content) in manifests {
-            fs::write(path, content)?;
-        }
-        for lock in locks {
-            lock.refresh()?;
-        }
-        Ok(())
-    })();
-    if let Err(error) = result {
-        for (path, content) in originals {
-            fs::write(path, content).with_context(|| {
-                format!(
-                    "lockfile sync failed ({error:#}); cannot restore {}",
-                    path.display()
-                )
-            })?;
-        }
-        return Err(error);
+    for (path, content) in manifests {
+        fs::write(path, content)?;
+    }
+    for lock in locks {
+        lock.refresh()?;
     }
     Ok(())
 }

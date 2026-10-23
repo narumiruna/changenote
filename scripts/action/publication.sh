@@ -55,14 +55,20 @@ verify_publication_batch() {
 inspect_publication() {
   gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$temp/releases.json"
   jq -e 'type == "array" and length > 0 and all(.[]; type == "array" and all(.[]; (.tag_name | type == "string" and length > 0) and (.draft | type == "boolean")))' "$temp/releases.json" >/dev/null || fail 'Invalid GitHub release response.'
+  remote_git ls-remote --tags --refs "$remote_url" > "$temp/remote-tag-refs"
   printf '[]\n' > "$temp/publication-plan.json"
-  local item tag action conflicts has_release draft
+  local item tag action conflicts has_release draft other_ref
   while IFS= read -r item; do
     tag=$(jq -r '.tag' <<< "$item")
     remote_tag "$tag"
     has_release=$(jq --arg tag "$tag" 'any(.[][]; .tag_name == $tag)' "$temp/releases.json")
     draft=$(jq --arg tag "$tag" 'any(.[][]; .tag_name == $tag and .draft)' "$temp/releases.json")
     conflicts='[]'
+    while IFS=$'\t' read -r _ other_ref; do
+      if [[ $other_ref == "refs/tags/$tag/"* || refs/tags/$tag == "$other_ref/"* ]]; then
+        conflicts=$(jq -c --arg reason "Remote tag namespace conflict: $tag and ${other_ref#refs/tags/}" '. + [$reason]' <<< "$conflicts")
+      fi
+    done < "$temp/remote-tag-refs"
     if [[ -n $tag_sha && $tag_sha != "$release" ]]; then
       conflicts=$(jq -c --arg reason "Remote tag points to another commit: $tag" '. + [$reason]' <<< "$conflicts")
     fi

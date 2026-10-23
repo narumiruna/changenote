@@ -17,13 +17,38 @@ pub struct CheckReport {
     pub passed: bool,
 }
 
-/// Check committed changes only. An exemption never bypasses input validation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum Coverage {
+    Pr,
+    Package,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CoverageReport {
+    #[serde(flatten)]
+    pub report: CheckReport,
+    pub covered_packages: Vec<String>,
+    pub uncovered_packages: Vec<String>,
+}
+
+/// Check committed changes only, with the original PR-level report.
 pub fn check(
     root: &Path,
     since: &str,
     skip_release: bool,
     reason: Option<&str>,
 ) -> Result<CheckReport> {
+    Ok(check_with_coverage(root, since, skip_release, reason, Coverage::Pr)?.report)
+}
+
+/// Check direct assignments in changed notes. Exemptions still validate inputs.
+pub fn check_with_coverage(
+    root: &Path,
+    since: &str,
+    skip_release: bool,
+    reason: Option<&str>,
+    coverage: Coverage,
+) -> Result<CoverageReport> {
     ensure!(
         skip_release == reason.is_some(),
         "--skip-release requires --reason and vice versa"
@@ -80,11 +105,13 @@ pub fn check(
     )?;
     let mut packages = BTreeSet::new();
     let mut note_paths = BTreeSet::new();
+    let mut assignments = BTreeSet::new();
     let mut outside = BTreeSet::new();
     for bytes in changed.split(|b| *b == 0).filter(|p| !p.is_empty()) {
         let path = path_from_bytes(bytes)?;
-        if notes.iter().any(|(p, _)| *p == root.join(&path)) {
+        if let Some((_, note)) = notes.iter().find(|(p, _)| *p == root.join(&path)) {
             note_paths.insert(path.clone());
+            assignments.extend(note.packages.keys().cloned());
         }
         let owner = config
             .packages
@@ -105,14 +132,24 @@ pub fn check(
             outside.insert(path);
         }
     }
-    let passed = packages.is_empty() || !note_paths.is_empty() || skip_release;
-    Ok(CheckReport {
-        merge_base: base,
-        changed_packages: packages.into_iter().collect(),
-        note_paths: note_paths.into_iter().collect(),
-        outside_paths: outside.into_iter().collect(),
-        skip_reason: reason.map(|r| r.trim().to_owned()),
-        passed,
+    let covered_packages = packages.intersection(&assignments).cloned().collect();
+    let uncovered_packages: Vec<_> = packages.difference(&assignments).cloned().collect();
+    let passed = skip_release
+        || match coverage {
+            Coverage::Pr => packages.is_empty() || !note_paths.is_empty(),
+            Coverage::Package => uncovered_packages.is_empty(),
+        };
+    Ok(CoverageReport {
+        report: CheckReport {
+            merge_base: base,
+            changed_packages: packages.into_iter().collect(),
+            note_paths: note_paths.into_iter().collect(),
+            outside_paths: outside.into_iter().collect(),
+            skip_reason: reason.map(|r| r.trim().to_owned()),
+            passed,
+        },
+        covered_packages,
+        uncovered_packages,
     })
 }
 
@@ -120,6 +157,7 @@ fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let output = Command::new("git")
         .current_dir(root)
         .env("GIT_OPTIONAL_LOCKS", "0")
+        .args(["-c", "core.fsmonitor=false"])
         .args(args)
         .output()
         .context("cannot run Git")?;
