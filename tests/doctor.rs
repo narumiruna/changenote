@@ -258,6 +258,8 @@ fn local_git_clean_and_dirty_state_are_read_only() {
         assert!(
             Command::new("git")
                 .current_dir(root)
+                // Fixture commits must not change snapshots through background maintenance.
+                .args(["-c", "gc.auto=0", "-c", "maintenance.auto=false"])
                 .args(args)
                 .status()
                 .unwrap()
