@@ -101,6 +101,8 @@ Packages in any language can use a plain-text `VERSION` file, including Python, 
 }
 ```
 
+For root and nested Go modules, see the [Go release guide](docs/go.md), including v2+ module paths and tag prefixes.
+
 `version_file` is relative to the package directory. Its filename selects the version field:
 
 | Filename | Version field |
