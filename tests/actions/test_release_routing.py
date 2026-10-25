@@ -96,6 +96,23 @@ class ReleaseRouting(unittest.TestCase):
             values, {"manage-pr": "true", "publish": "false", "release-commit": ""}
         )
 
+    def test_release_publication_is_independent_of_a_later_pr_only_push(self):
+        release = self.fixture.release()
+        self.associate(release)
+        result, publication = self.classify(after=release)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(publication["publish"], "true")
+        self.fixture.later_commit()
+        result, later = self.classify(before=release)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(later, {
+            "manage-pr": "true", "publish": "false", "release-commit": "",
+        })
+        # The earlier publication still uses its authorized immutable selection.
+        _, outputs = self.publish_selected(publication["release-commit"])
+        self.assertEqual(outputs["release-commit"], release)
+        self.assertEqual(outputs["published"], "true")
+
     def test_latest_of_two_releases_in_one_push(self):
         self.fixture.release()
         self.fixture.note("second release", "second")

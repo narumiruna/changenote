@@ -3,6 +3,33 @@
 # shellcheck source=scripts/action/common.sh
 source "${BASH_SOURCE[0]%/*}/common.sh"
 
+select_publication_notes() {
+  local path
+  local -A consumed=()
+  "$cli" status --include-note-paths > "$temp/parent-plan.json"
+  git diff --no-renames --diff-filter=D --name-only -z "$parent" "$release" -- .changenote > "$temp/deleted-paths"
+  while IFS= read -r -d '' path; do consumed[$path]=1; done < "$temp/deleted-paths"
+  jq -j '[.[].note_paths[]] | unique[] + "\u0000"' "$temp/parent-plan.json" > "$temp/parent-note-paths"
+  : > "$temp/pending-note-paths"
+  while IFS= read -r -d '' path; do
+    if [[ -z ${consumed[$path]+present} ]]; then
+      printf '%s\0' "$path" >> "$temp/pending-note-paths"
+    fi
+  done < "$temp/parent-note-paths"
+}
+
+hide_pending_notes() {
+  local path
+  while IFS= read -r -d '' path; do rm -- "$path"; done < "$temp/pending-note-paths"
+}
+
+restore_pending_notes() {
+  if [[ -s $temp/pending-note-paths ]]; then
+    git --literal-pathspecs restore --source="$parent" --worktree \
+      --pathspec-from-file="$temp/pending-note-paths" --pathspec-file-nul
+  fi
+}
+
 verify_publication_batch() {
   # Explicit first-parent diffs also select merge commits whose tree matches the PR head.
   release=''
@@ -24,19 +51,24 @@ verify_publication_batch() {
   jq -e 'type == "array" and length > 0' "$temp/batch.json" >/dev/null || fail 'Invalid or empty release batch.'
   parent=$(git rev-parse "$release^")
   checkout_work "$parent"
-  # Reconstruct the version commit from its parent's notes. This validates all fields,
-  # bumps, deleted notes, versions, changelogs, paths, and the batch without a new schema.
+  # Replay only consumed notes. Newer notes may have reached the base branch
+  # before the Release PR merged; restore them before comparing the complete tree.
+  select_publication_notes
+  hide_pending_notes
   "$cli" status > "$temp/expected.json"
   jq -e --slurpfile expected "$temp/expected.json" '. == ($expected[0] | map(del(.notes)))' "$temp/batch.json" >/dev/null || fail 'Batch does not match the parent release plan.'
   local generated=''
   if "$cli" version > "$temp/applied.json"; then
+    restore_pending_notes
     stage_release "$temp/batch.json"
     generated=$(git write-tree)
   fi
   if [[ $generated != "$(git rev-parse "$release^{tree}")" ]]; then
     # Earlier releases did not refresh lockfiles. Accept only a complete profile.
     git reset --hard "$parent"
+    hide_pending_notes
     "$cli" version --no-lockfiles > "$temp/applied.json"
+    restore_pending_notes
     stage_release "$temp/batch.json"
     [[ $(git write-tree) == "$(git rev-parse "$release^{tree}")" ]] || fail 'Release commit contains changes beyond the generated release tree.'
   fi

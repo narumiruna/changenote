@@ -16,10 +16,7 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: changenote-release-main
-  cancel-in-progress: false
-
+# Route every event. An ordinary push must not replace a queued publication.
 jobs:
   route:
     runs-on: ubuntu-latest
@@ -44,6 +41,9 @@ jobs:
 
   release:
     needs: route
+    concurrency:
+      group: changenote-release-pr-main
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write
@@ -68,7 +68,10 @@ jobs:
   publish:
     outputs:
       release-commit: ${{ steps.publish.outputs.release-commit }}
-    needs: [route, release]
+    needs: route
+    concurrency:
+      group: changenote-publication-main
+      cancel-in-progress: false
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.route.result == 'success' && needs.route.outputs.publish == 'true' }}
     permissions:
       contents: write
