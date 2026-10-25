@@ -1,3 +1,9 @@
+## 0.7.1
+
+### Patch Changes
+
+- Fix release publication when newer notes remain pending and prevent ordinary pushes from replacing queued publication runs.
+
 ## 0.7.0
 
 ### Minor Changes
