@@ -77,8 +77,15 @@ class Metadata(unittest.TestCase):
         workflow = read_yaml(ROOT / ".github/workflows/release.yml")
         self.assertFalse((ROOT / ".github/workflows/release-pr.yml").exists())
         self.assertEqual(workflow["name"], "Release")
-        self.assertEqual(workflow["concurrency"]["group"], "changenote-release-main")
-        self.assertEqual(workflow["concurrency"]["cancel-in-progress"], "false")
+        # Routing must run for every event. PR updates must not replace a queued publication.
+        self.assertNotIn("concurrency", workflow)
+        self.assertNotIn("concurrency", workflow["jobs"]["route"])
+        self.assertEqual(workflow["jobs"]["release"]["concurrency"], {
+            "group": "changenote-release-pr-main", "cancel-in-progress": "false",
+        })
+        self.assertEqual(workflow["jobs"]["publish"]["concurrency"], {
+            "group": "changenote-publication-main", "cancel-in-progress": "false",
+        })
         self.assertEqual(workflow["permissions"], {"contents": "read"})
         self.assertEqual(
             workflow["jobs"]["release"]["permissions"],
@@ -87,7 +94,8 @@ class Metadata(unittest.TestCase):
         self.assertEqual(
             workflow["jobs"]["publish"]["permissions"], {"contents": "write"}
         )
-        self.assertEqual(workflow["jobs"]["publish"]["needs"], ["route", "release"])
+        # A replaced PR-management job must not cancel its independent publication.
+        self.assertEqual(workflow["jobs"]["publish"]["needs"], "route")
         self.assertIn("!cancelled()", workflow["jobs"]["publish"]["if"])
         self.assertEqual(workflow["jobs"]["route"]["permissions"], {"contents": "read", "pull-requests": "read"})
         route_checkout = workflow["jobs"]["route"]["steps"][0]["with"]
