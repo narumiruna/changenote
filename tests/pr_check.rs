@@ -233,6 +233,21 @@ fn root_patterns_exclude_note_paths_without_hiding_changed_notes() {
     }
 }
 
+#[test]
+fn linked_membership_does_not_cover_a_changed_package() {
+    let dir = project();
+    let root = dir.path();
+    setting(root, "linked", serde_json::json!([["pkg", "nested"]]));
+    commit(root);
+    git(root, &["branch", "-f", "base", "HEAD"]);
+    write(root, "packages/pkg/new.rs", "Source");
+    write(root, "packages/pkg/nested/new.rs", "Source");
+    add(root, "one", vec!["pkg".into()], Bump::Minor, "Fix").unwrap();
+    commit(root);
+    let report = check_with_coverage(root, "base", false, None, Coverage::Package).unwrap();
+    assert_eq!(report.uncovered_packages, ["nested"]);
+}
+
 fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn walk(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
         for item in fs::read_dir(dir).unwrap() {

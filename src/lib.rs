@@ -7,8 +7,8 @@ mod planning;
 pub use generated::{add_generated, add_generated_with_type};
 mod check;
 pub use planning::{
-    DetailedRelease, FixedGroup, SectionedRelease, status_with_note_paths,
-    status_with_note_sections,
+    DetailedRelease, FixedGroup, GroupedRelease, LinkedGroup, SectionedRelease,
+    status_with_group_causes, status_with_note_paths, status_with_note_sections,
 };
 mod json_value;
 pub use check::{
@@ -168,6 +168,8 @@ struct ConfigFile {
     changed_file_patterns: patterns::FilePatterns,
     #[serde(default)]
     fixed: Vec<Vec<String>>,
+    #[serde(default)]
+    linked: Vec<Vec<String>>,
     changelog: Option<sections::ChangelogConfig>,
 }
 
@@ -198,6 +200,7 @@ pub(crate) struct ReleaseConfig {
     base_branch: Option<String>,
     changed_file_patterns: patterns::FilePatterns,
     fixed: Vec<Vec<String>>,
+    linked: Vec<Vec<String>>,
     changelog: Option<sections::ChangelogConfig>,
     package_options: BTreeMap<String, PackageOptions>,
 }
@@ -270,6 +273,22 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
             ensure!(
                 members.insert(name),
                 "duplicate or overlapping fixed package {name}"
+            );
+        }
+    }
+    for group in &file.linked {
+        ensure!(
+            group.len() >= 2,
+            "linked groups require at least two packages"
+        );
+        for name in group {
+            ensure!(
+                config.packages.contains_key(name),
+                "unknown linked package {name}"
+            );
+            ensure!(
+                members.insert(name),
+                "duplicate linked or fixed membership: {name}"
             );
         }
     }
@@ -354,6 +373,7 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
         base_branch: file.base_branch,
         changed_file_patterns: file.changed_file_patterns,
         fixed: file.fixed,
+        linked: file.linked,
         changelog: file.changelog,
         package_options,
     })
@@ -531,7 +551,7 @@ fn plan(
 ) -> Result<Vec<Release>> {
     Ok(planning::plan(root, config, notes)?
         .into_iter()
-        .map(|r| r.detail.release)
+        .map(|r| r.sectioned.detail.release)
         .collect())
 }
 

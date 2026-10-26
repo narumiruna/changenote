@@ -22,6 +22,16 @@
       "type": "string",
       "minLength": 1
     },
+    "linked": {
+      "description": "Disjoint explicit-name groups that share a version baseline without activating inactive members.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 2,
+        "uniqueItems": true,
+        "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+      }
+    },
     "fixed": {
       "description": "Disjoint groups of at least two known packages that release at one version. Membership is also checked by the CLI.",
       "type": "array",

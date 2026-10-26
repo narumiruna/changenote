@@ -40,6 +40,23 @@ class ConfigPolicies(unittest.TestCase):
         _, outputs = f.action("check")
         self.assertTrue(json.loads(outputs["check-report"])["passed"])
 
+    def test_linked_baseline_keeps_inactive_member_and_replays(self):
+        f = self.f
+        (f.repo / "b").mkdir()
+        (f.repo / "b/VERSION").write_text("2.4.9\n")
+        config = json.loads((f.repo / ".changenote/config.json").read_text())
+        config["packages"]["b"] = {"path": "b", "version_file": "VERSION"}
+        self.config(packages=config["packages"], linked=[["pkg", "b"]])
+        f.git("push", "origin", "main")
+        release = f.release()
+        self.assertEqual((f.repo / "b/VERSION").read_text(), "2.4.9\n")
+        self.assertFalse((f.repo / "b/CHANGELOG.md").exists())
+        self.assertIn("Linked version baseline: 2.4.9", f.state()["pulls"][-1]["body"])
+        self.assertEqual(json.loads(f.git("show", release + ":.changenote/releases.json"))[0]["version"], "2.4.10")
+        f.action("preview")
+        _, result = f.action("publish")
+        self.assertEqual(result["published"], "true")
+
     def test_base_branch_does_not_retarget_release_or_explicit_check(self):
         f = self.f
         self.config(base_branch="unavailable-comparison")

@@ -177,11 +177,11 @@ fn run() -> Result<()> {
             include_note_types,
             include_note_sections,
         } => {
-            let details = changenote::status_with_note_sections(&cli.root)?;
+            let details = changenote::status_with_group_causes(&cli.root)?;
             let mut output = Vec::new();
             for detail in details {
                 let mut entry = if include_note_paths {
-                    serde_json::to_value(&detail.detail)?
+                    serde_json::to_value(&detail)?
                 } else {
                     serde_json::to_value(&detail.detail.release)?
                 };

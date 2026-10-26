@@ -325,6 +325,25 @@ Direct summaries, their bumps, and their paths stay with the named package. A pr
 
 All member version files, changelogs, and tags are release outputs. A member without direct notes gets the text “Released with its fixed version group; no direct changes.” in its changelog, Release PR, and GitHub Release. Dependency ranges remain unchanged; supported existing lockfiles are synchronized. Upgrade CLI and Actions together before using fixed config; older CLIs reject it.
 
+## Linked version groups
+
+Optional `linked` groups use explicit configured package names, for example `"linked": [["pkg-a", "pkg-b"]]`.
+Each group needs at least two distinct known names. Groups cannot overlap each other or fixed groups. Globs and null values are rejected.
+Omission and `[]` retain independent versions.
+
+Active members use the highest original current version in the complete group plus the highest requested active-member bump, applied once.
+Only members with release causes change. An inactive high-version member supplies a baseline but does not release.
+For A at 1.0.0 and B at 1.2.0, a patch note for A releases A at 1.2.1; B remains at 1.2.0.
+If A has a patch note and B a minor note, both release at 1.3.0.
+Actual old versions, direct summaries, note bumps, and note paths stay with each package. Linked membership does not provide direct PR coverage.
+
+`status --include-note-paths` adds `linked_group` with sorted complete members, the original `base_version`, and filename-ordered `source_note_paths`.
+Source paths explain the group baseline; they are not additional direct notes.
+Rust callers can use `status_with_group_causes()` and `GroupedRelease`.
+Existing public result layouts and API signatures remain supported; older detailed views omit linked causes.
+Default status JSON and metadata-only saved batches are unchanged.
+Upgrade CLI and Action pins together. Dependency propagation is not implemented.
+
 ## Check PR notes
 
 ```sh
@@ -632,7 +651,7 @@ Before production use, verify repository permissions, branch rules, and App-toke
 - Only top-level `.changenote/*.md` files are read. Hidden files and `README.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` are ignored.
 - `tag` requires a clean Git working tree and committed release data. It creates local tags only; it does not push, publish artifacts, or run arbitrary commands.
 - Input validation and output preparation happen before version writes. Ordinary failures trigger best-effort recovery of known release files. Failed recovery or process termination can leave partial changes. Run in a clean checkout, inspect changes, and use Git to restore files before retrying. Do not run concurrent local version commands.
-- Dependency propagation, registry publication, prereleases, and linked version groups are not implemented.
+- Dependency propagation, registry publication, and prereleases are not implemented.
 
 ## Development
 

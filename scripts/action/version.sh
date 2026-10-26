@@ -37,7 +37,7 @@ if [[ $(jq length "$temp/plan.json") == 0 ]]; then
   exit 0
 fi
 output has-notes true
-"$cli" status --include-note-sections > "$temp/details.json"
+"$cli" status --include-note-paths --include-note-sections > "$temp/details.json"
 "$cli" version > "$temp/applied.json"
 jq -e --slurpfile expected "$temp/plan.json" '. == $expected[0]' "$temp/applied.json" >/dev/null || fail 'Version output differs from status.'
 stage_release "$temp/plan.json"
@@ -52,6 +52,7 @@ listing=$(remote_git ls-remote --heads "$remote_url" "refs/heads/$branch")
 [[ $(awk '{print $1}' <<< "$listing") == "$expected_head" ]] || fail 'Release branch moved after generation.'
 jq -r --arg marker "$marker" --arg base "$base" '
   def changes:
+    (if has("linked_group") then "Linked version baseline: " + .linked_group.base_version + ". Only packages with release causes are included.\n\n" else "" end) +
     if (.notes | length) == 0 then "Released with its fixed version group; no direct changes." else
     .note_sections | map(
       "### " + .title + "\n\n" +
