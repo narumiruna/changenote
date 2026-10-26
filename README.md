@@ -276,6 +276,37 @@ Release PRs use the same planned sections as changelogs; GitHub Releases use the
 To remove this feature before versioning, remove section configuration and `$type` metadata from pending notes.
 Do not edit committed release batches.
 
+### Changelog output controls and native templates
+
+```json
+{
+  "changelog": {
+    "enabled": true,
+    "note_template": "{package}@{version} [{bump}]\n\n{summary}"
+  }
+}
+```
+
+Both fields are optional. `enabled` defaults to `true`, and `note_template` defaults to `{summary}`.
+Existing sections-only configuration remains supported; `sections` is optional when only output controls are used.
+An empty changelog object retains default bump grouping. If sections are supplied, they must still be nonempty and valid.
+
+A template is either exactly `{summary}`, or one metadata line followed by a blank line and `{summary}`.
+The metadata line must be nonempty, trimmed, contain no control characters, and not start a backtick or tilde code fence.
+Metadata supports `{package}`, `{version}` (the target version), and `{bump}` (that note's own bump).
+Unknown or unbalanced placeholders, literal braces in metadata, and null values are rejected before writes.
+The complete summary is inserted once as literal Markdown; placeholders or shell syntax inside it are not evaluated.
+Version headings, section headings, and list indentation stay under the native renderer's control.
+Rendered `note_sections` and Release PR details use the template. Raw `notes`, bumps, and paths do not change.
+Members without direct notes retain their native explanatory message. No JS module, shell hook, formatter, or network lookup is run.
+
+With `"enabled": false`, version files and saved batch metadata still update, and consumed notes are removed, but changelogs are neither created nor changed.
+An existing changelog is not a release-body fallback. Local tagging remains supported.
+GitHub preview and publication do not support batches generated with changelog output disabled; they fail before remote tag or Release writes.
+This decision uses the selected historical batch's configuration, not later live settings.
+Keep changelogs enabled if GitHub publication is required. Disabling output does not preserve consumed summaries elsewhere.
+Upgrade CLI and all Action pins together before using these controls.
+
 ## Note sources and automatic names
 
 ```sh

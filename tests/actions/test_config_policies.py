@@ -114,6 +114,54 @@ class ConfigPolicies(unittest.TestCase):
         self.assertEqual((f.repo / ".changenote/newer.md").read_bytes(), newer)
         self.assertFalse((f.repo / "b/CHANGELOG.md").exists())
 
+    def test_native_template_matches_pr_and_verified_release_without_execution(self):
+        f = self.f
+        sentinel = f.top / "template-command-ran"
+        template = f"$(touch {sentinel}) {{package}}@{{version}} [{{bump}}]\n\n{{summary}}"
+        self.config(changelog={"note_template": template})
+        f.git("push", "origin", "main")
+        f.release()
+        expected = f"$(touch {sentinel}) pkg@1.0.1 [patch]"
+        self.assertIn(expected, (f.repo / "CHANGELOG.md").read_text())
+        self.assertIn(expected, f.state()["pulls"][-1]["body"])
+        f.action("publish")
+        self.assertIn(expected, f.state()["releases"][-1]["body"])
+        self.assertFalse(sentinel.exists())
+
+    def test_disabled_changelog_stages_no_file_and_blocks_historical_publication(self):
+        for existing in (False, True):
+            with self.subTest(existing=existing):
+                self.doCleanups()
+                self.setUp()
+                f = self.f
+                if existing:
+                    (f.repo / "CHANGELOG.md").write_text("## 1.0.1\n\nStale body\n")
+                self.config(changelog={"enabled": False})
+                f.git("push", "origin", "main")
+                release = f.release()
+                self.assertEqual((f.repo / "CHANGELOG.md").exists(), existing)
+                changed = f.git("diff-tree", "--no-commit-id", "--name-only", "-r", release)
+                self.assertNotIn("CHANGELOG.md", changed)
+                # Live settings cannot enable bodies for a historically disabled release.
+                self.config(changelog={"enabled": True})
+                f.git("push", "origin", "main")
+                for action in ("preview", "publish"):
+                    result, _ = f.action(action, ok=False)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("disabled", result.stderr)
+                    self.assertEqual(f.state()["releases"], [])
+                    self.assertEqual(f.git("--git-dir=" + str(f.remote), "tag"), "")
+
+    def test_later_disabled_output_does_not_block_an_older_enabled_batch(self):
+        f = self.f
+        f.release()
+        self.config(changelog={"enabled": False})
+        f.git("push", "origin", "main")
+        _, preview = f.action("preview")
+        self.assertEqual(preview["ready"], "true")
+        _, published = f.action("publish")
+        self.assertEqual(published["published"], "true")
+
     def test_base_branch_does_not_retarget_release_or_explicit_check(self):
         f = self.f
         self.config(base_branch="unavailable-comparison")

@@ -1,5 +1,6 @@
 mod changelog;
 mod sections;
+mod template;
 pub use sections::NoteSection;
 mod generated;
 mod patterns;
@@ -100,8 +101,13 @@ impl From<&Release> for SavedRelease {
 
 /// Read one package's exact changelog version body without changing files.
 pub fn release_notes(root: &Path, package: &str, version: &Version) -> Result<String> {
-    let config = load_config(root)?;
+    let config = load_release_config(root)?;
+    ensure!(
+        sections::enabled(config.changelog.as_ref()),
+        "GitHub release notes are unavailable because changelog output is disabled"
+    );
     let pkg = config
+        .config
         .packages
         .get(package)
         .context("unknown release package")?;
@@ -190,6 +196,12 @@ fn deserialize_optional_string<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<Option<String>, D::Error> {
     String::deserialize(deserializer).map(Some)
+}
+
+fn deserialize_optional_value<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
 }
 
 struct PackageOptions {
@@ -325,6 +337,7 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
         !config.packages.is_empty(),
         "config must contain at least one package"
     );
+    let write_changelogs = sections::enabled(file.changelog.as_ref());
     let mut files = std::collections::BTreeSet::new();
     for (name, pkg) in &config.packages {
         safe_name(name)?;
@@ -352,21 +365,23 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
             files.insert(file.canonicalize()?),
             "packages cannot share a version file"
         );
-        let changelog = checked_path(root, &pkg.path.join("CHANGELOG.md"))?;
-        let changelog_target = if changelog.exists() {
-            ensure!(changelog.is_file(), "changelog must be a file");
-            changelog.canonicalize()?
-        } else {
-            changelog
-                .parent()
-                .context("missing parent")?
-                .canonicalize()?
-                .join("CHANGELOG.md")
-        };
-        ensure!(
-            files.insert(changelog_target),
-            "package output paths must not overlap"
-        );
+        if write_changelogs {
+            let changelog = checked_path(root, &pkg.path.join("CHANGELOG.md"))?;
+            let changelog_target = if changelog.exists() {
+                ensure!(changelog.is_file(), "changelog must be a file");
+                changelog.canonicalize()?
+            } else {
+                changelog
+                    .parent()
+                    .context("missing parent")?
+                    .canonicalize()?
+                    .join("CHANGELOG.md")
+            };
+            ensure!(
+                files.insert(changelog_target),
+                "package output paths must not overlap"
+            );
+        }
         let version = read_version(&file)?;
         let options = &package_options[name];
         if let Some(prefix) = &options.tag_prefix {
@@ -872,16 +887,18 @@ pub fn version_with_output(
     for detail in &details {
         let release = &detail.detail.release;
         let pkg = &config.packages[&release.package];
-        let path = checked_path(root, &pkg.path.join("CHANGELOG.md"))?;
-        let old = if path.exists() {
-            fs::read_to_string(&path)?
-        } else {
-            String::new()
-        };
-        writes.push((
-            path,
-            changelog::render_sections(release, &old, legacy, &detail.note_sections),
-        ));
+        if sections::enabled(release_config.changelog.as_ref()) {
+            let path = checked_path(root, &pkg.path.join("CHANGELOG.md"))?;
+            let old = if path.exists() {
+                fs::read_to_string(&path)?
+            } else {
+                String::new()
+            };
+            writes.push((
+                path,
+                changelog::render_sections(release, &old, legacy, &detail.note_sections),
+            ));
+        }
         for version_path in
             release_version_paths(root, &release_config, std::slice::from_ref(release))?
         {

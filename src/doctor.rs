@@ -110,7 +110,9 @@ impl DoctorReport {
             outputs.extend(locks.iter().map(|lock| lock.path.clone()));
             for release in &releases {
                 let package = &config.config.packages[&release.package];
-                outputs.push(checked_path(root, &package.path.join("CHANGELOG.md"))?);
+                if crate::sections::enabled(config.changelog.as_ref()) {
+                    outputs.push(checked_path(root, &package.path.join("CHANGELOG.md"))?);
+                }
             }
             if !releases.is_empty() {
                 outputs.push(checked_path(root, Path::new(".changenote/releases.json"))?);

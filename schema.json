@@ -49,11 +49,21 @@
       }
     },
     "changelog": {
-      "description": "Optional ordered sections. Without this setting, notes are grouped by SemVer bump.",
+      "description": "Optional changelog output controls, ordered sections, and bounded note rendering. Omission retains the existing output.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["sections"],
       "properties": {
+        "enabled": {
+          "description": "Write package changelogs. When false, local version and tag remain supported but GitHub publication is unsupported.",
+          "type": "boolean",
+          "default": true
+        },
+        "note_template": {
+          "description": "{summary}, or one metadata line followed by a blank line and {summary}. Metadata supports {package}, {version}, and {bump}; the CLI validates placeholders.",
+          "type": "string",
+          "minLength": 1,
+          "default": "{summary}"
+        },
         "sections": {
           "type": "array",
           "minItems": 1,
