@@ -1,0 +1,54 @@
+"""Exercise language-independent configuration with the real CLI and local GitHub mock."""
+import json
+import unittest
+
+import test_actions
+
+
+class ConfigPolicies(unittest.TestCase):
+    def setUp(self):
+        self.f = test_actions.Actions("test_no_batch")
+        self.f.setUp()
+        self.addCleanup(self.f.doCleanups)
+
+    def config(self, **settings):
+        path = self.f.repo / ".changenote/config.json"
+        value = json.loads(path.read_text())
+        value.update(settings)
+        path.write_text(json.dumps(value))
+        self.f.commit("configure policies")
+
+    def test_file_patterns_agree_with_cli_and_preserve_note_discovery(self):
+        f = self.f
+        self.config(changed_file_patterns=["src/**"])
+        f.git("branch", "comparison")
+        (f.repo / "docs").mkdir()
+        (f.repo / "docs/guide.md").write_text("Docs")
+        f.commit("docs only")
+        f.env.update(INPUT_SINCE="comparison", INPUT_COVERAGE="package")
+        _, outputs = f.action("check")
+        self.assertEqual(json.loads(outputs["check-report"])["changed_packages"], [])
+        (f.repo / "src").mkdir()
+        (f.repo / "src/main.rs").write_text("Source")
+        f.commit("source without note")
+        result, outputs = f.action("check", ok=False)
+        self.assertNotEqual(result.returncode, 0)
+        expected = f.run_cmd([str(test_actions.CLI), "check", "--since", "comparison", "--coverage", "package"], ok=False)
+        self.assertEqual(json.loads(outputs["check-report"]), json.loads(expected.stdout))
+        f.cli("add", "source", "--patch", "pkg", "-m", "Fix source")
+        f.commit("add excluded-path note")
+        _, outputs = f.action("check")
+        self.assertTrue(json.loads(outputs["check-report"])["passed"])
+
+    def test_base_branch_does_not_retarget_release_or_explicit_check(self):
+        f = self.f
+        self.config(base_branch="unavailable-comparison")
+        f.env.update(INPUT_SINCE="HEAD", INPUT_COVERAGE="package")
+        _, outputs = f.action("check")
+        self.assertEqual(outputs["passed"], "true")
+        f.git("push", "origin", "main")
+        f.release()
+        _, preview = f.action("preview")
+        self.assertEqual(preview["ready"], "true")
+        _, published = f.action("publish")
+        self.assertEqual(published["published"], "true")

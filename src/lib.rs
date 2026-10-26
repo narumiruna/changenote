@@ -2,6 +2,7 @@ mod changelog;
 mod sections;
 pub use sections::NoteSection;
 mod generated;
+mod patterns;
 mod planning;
 pub use generated::{add_generated, add_generated_with_type};
 mod check;
@@ -164,6 +165,8 @@ struct ConfigFile {
     #[serde(default, deserialize_with = "deserialize_optional_string")]
     base_branch: Option<String>,
     #[serde(default)]
+    changed_file_patterns: patterns::FilePatterns,
+    #[serde(default)]
     fixed: Vec<Vec<String>>,
     changelog: Option<sections::ChangelogConfig>,
 }
@@ -193,6 +196,7 @@ struct PackageOptions {
 pub(crate) struct ReleaseConfig {
     config: Config,
     base_branch: Option<String>,
+    changed_file_patterns: patterns::FilePatterns,
     fixed: Vec<Vec<String>>,
     changelog: Option<sections::ChangelogConfig>,
     package_options: BTreeMap<String, PackageOptions>,
@@ -348,6 +352,7 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
     Ok(ReleaseConfig {
         config,
         base_branch: file.base_branch,
+        changed_file_patterns: file.changed_file_patterns,
         fixed: file.fixed,
         changelog: file.changelog,
         package_options,

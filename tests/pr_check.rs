@@ -122,6 +122,117 @@ fn configured_ref_rejects_invalid_values_even_with_override() {
     }
 }
 
+#[test]
+fn file_patterns_filter_coverage_but_not_notes_or_validation() {
+    let dir = project();
+    let root = dir.path();
+    setting(
+        root,
+        "changed_file_patterns",
+        serde_json::json!(["**", "!docs/**", "!tests/**"]),
+    );
+    commit(root);
+    git(root, &["branch", "-f", "base", "HEAD"]);
+    write(root, "packages/pkg/docs/a.md", "Docs");
+    write(root, "packages/pkg/nested/tests/a.rs", "Tests");
+    commit(root);
+    let report = check_with_coverage(root, "base", false, None, Coverage::Package).unwrap();
+    assert!(report.report.passed);
+    assert!(report.report.changed_packages.is_empty());
+    assert!(report.report.outside_paths.is_empty());
+    write(root, "packages/pkg/src/main.rs", "Source");
+    commit(root);
+    let report = check_with_coverage(root, "base", false, None, Coverage::Package).unwrap();
+    assert!(!report.report.passed);
+    assert_eq!(report.uncovered_packages, ["pkg"]);
+    add(root, "new", vec!["pkg".into()], Bump::Patch, "Source note").unwrap();
+    commit(root);
+    assert!(
+        check_with_coverage(root, "base", false, None, Coverage::Package)
+            .unwrap()
+            .report
+            .passed
+    );
+    // Excluding every path must not bypass invalid versions or old notes.
+    setting(
+        root,
+        "changed_file_patterns",
+        serde_json::json!(["never/**"]),
+    );
+    write(root, "packages/pkg/nested/VERSION", "invalid");
+    commit(root);
+    assert!(check(root, "base", true, Some("Docs")).is_err());
+}
+
+#[test]
+fn file_patterns_do_not_reassign_nested_paths_and_check_both_rename_sides() {
+    let dir = project();
+    let root = dir.path();
+    setting(
+        root,
+        "changed_file_patterns",
+        serde_json::json!(["old.txt"]),
+    );
+    commit(root);
+    git(root, &["branch", "-f", "base", "HEAD"]);
+    write(root, "packages/pkg/nested/src/new.rs", "excluded");
+    commit(root);
+    assert!(
+        check(root, "base", false, None)
+            .unwrap()
+            .changed_packages
+            .is_empty()
+    );
+    fs::create_dir_all(root.join("packages/pkg/nested/docs")).unwrap();
+    fs::rename(
+        root.join("packages/pkg/old.txt"),
+        root.join("packages/pkg/nested/docs/moved.txt"),
+    )
+    .unwrap();
+    commit(root);
+    assert_eq!(
+        check(root, "base", false, None).unwrap().changed_packages,
+        ["pkg"]
+    );
+    fs::remove_file(root.join("packages/pkg/nested/old.txt")).unwrap();
+    commit(root);
+    assert_eq!(
+        check(root, "base", false, None).unwrap().changed_packages,
+        ["nested", "pkg"]
+    );
+}
+
+#[test]
+fn root_patterns_exclude_note_paths_without_hiding_changed_notes() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-qb", "main"]);
+    changenote::init(root, "pkg", semver::Version::new(1, 0, 0)).unwrap();
+    setting(root, "changed_file_patterns", serde_json::json!(["src/**"]));
+    commit(root);
+    git(root, &["branch", "base"]);
+    write(root, "src/main.rs", "Source");
+    add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
+    commit(root);
+    let report = check_with_coverage(root, "base", false, None, Coverage::Package).unwrap();
+    assert!(report.report.passed);
+    assert_eq!(
+        report.report.note_paths,
+        [PathBuf::from(".changenote/fix.md")]
+    );
+    assert_eq!(changenote::status(root).unwrap().len(), 1);
+    for value in [
+        serde_json::Value::Null,
+        serde_json::json!([]),
+        serde_json::json!(["!src/**"]),
+        true.into(),
+    ] {
+        setting(root, "changed_file_patterns", value);
+        commit(root);
+        assert!(check(root, "base", true, Some("Docs")).is_err());
+    }
+}
+
 fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn walk(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
         for item in fs::read_dir(dir).unwrap() {

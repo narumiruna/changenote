@@ -11,6 +11,12 @@
       "description": "Schema reference for editors. The CLI does not fetch or validate this reference.",
       "type": ["string", "null"]
     },
+    "changed_file_patterns": {
+      "description": "Package-relative check paths. Include matches minus all leading-! exclusions. Omission includes every package path.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
     "base_branch": {
       "description": "Local Git comparison ref for check when --since is omitted. Does not select release Action branches.",
       "type": "string",

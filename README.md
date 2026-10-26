@@ -343,7 +343,7 @@ Rust callers can use `configured_base_branch()`; existing explicit-ref check API
 
 `check` requires the Git repository root, a clean working tree, full enough history to find a merge base, and an available base ref. It compares tracked paths between `git merge-base <ref> HEAD` and `HEAD`; it does not include uncommitted or untracked changes. File renames report both old and new paths. Nested packages use the deepest matching configured directory. Files outside all configured packages are reported but do not imply a package release.
 
-If packages changed, at least one valid top-level note must be added, modified, or renamed in that comparison and remain in `HEAD`. Unchanged old notes and deleted notes do not satisfy the check. The default `--coverage pr` is a **PR-level check, not proof of per-package note coverage**. No file patterns are excluded automatically. Use the explicit exemption for documentation-only or test-only changes inside package directories. `--skip-release` requires a non-empty `--reason`; it never bypasses config, version, note, or Git validation.
+If packages changed, at least one valid top-level note must be added, modified, or renamed in that comparison and remain in `HEAD`. Unchanged old notes and deleted notes do not satisfy the check. The default `--coverage pr` is a **PR-level check, not proof of per-package note coverage**. No file patterns are excluded automatically. Optional `changed_file_patterns` can limit which package-relative paths require notes (see below). Use the explicit exemption for documentation-only or test-only changes inside package directories. `--skip-release` requires a non-empty `--reason`; it never bypasses config, version, note, or Git validation.
 
 Use `--coverage package` to require a direct package assignment in a changed note for every changed package.
 A note for another package, an unchanged old note, or fixed-group propagation does not cover that package.
@@ -376,6 +376,29 @@ steps:
 Use this job for `pull_request` events. Checkout must contain `refs/remotes/origin/<base branch>` and a clean tree. Branch names enter the shell through an environment variable, not inline expression substitution.
 
 For tested, isolated fixtures, see [changenote-example](https://github.com/narumiruna/changenote-example). Use its pinned CLI revision; released binaries can have different features.
+
+### File patterns for note checks
+
+```json
+{
+  "changed_file_patterns": ["**", "!docs/**", "!tests/**"]
+}
+```
+
+Omission includes all tracked package files. A supplied list must be nonempty and have an inclusion pattern.
+Match a complete package-relative path, with forward slashes and case-sensitive matching.
+An inclusion must match and no exclusion may match; a leading `!` marks an exclusion. List order cannot re-include a path.
+`*` and `?` do not cross path separators. A complete `**` component matches zero or more directories; trailing `**` also matches descendant files.
+Bracket classes and brace alternatives are supported. Wildcards match leading dots.
+Reject malformed patterns, absolute or drive paths, backslashes, empty/current/parent components, and partial `**` components.
+This is not Git ignore syntax. There are no implicit file exclusions.
+
+The deepest package owns each path before filtering. An excluded nested path never falls back to a parent package.
+Renames check old and new paths separately; deletions use the old path.
+Filtered in-package paths are not reported as outside paths.
+Patterns affect both coverage modes, but never filter pending releases or hide configuration, version, note, or Git errors.
+Changed notes are discovered independently, even when the note path does not match.
+Upgrade CLI and check Action pins together before using this setting.
 
 ## Local diagnostics
 
