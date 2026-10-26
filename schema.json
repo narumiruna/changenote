@@ -22,6 +22,12 @@
       "type": "string",
       "minLength": 1
     },
+    "ignore": {
+      "description": "Explicit configured packages whose pending notes are retained instead of released. Fixed groups must be paused in full.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+    },
     "linked": {
       "description": "Disjoint explicit-name groups that share a version baseline without activating inactive members.",
       "type": "array",

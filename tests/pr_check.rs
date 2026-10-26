@@ -248,6 +248,35 @@ fn linked_membership_does_not_cover_a_changed_package() {
     assert_eq!(report.uncovered_packages, ["nested"]);
 }
 
+#[test]
+fn paused_packages_still_require_direct_changed_notes() {
+    let dir = project();
+    let root = dir.path();
+    setting(root, "ignore", serde_json::json!(["pkg"]));
+    commit(root);
+    git(root, &["branch", "-f", "base", "HEAD"]);
+    write(root, "packages/pkg/new.rs", "Source");
+    commit(root);
+    let report = check_with_coverage(root, "base", false, None, Coverage::Package).unwrap();
+    assert_eq!(report.uncovered_packages, ["pkg"]);
+    add(
+        root,
+        "paused-new",
+        vec!["pkg".into()],
+        Bump::Minor,
+        "Paused change",
+    )
+    .unwrap();
+    commit(root);
+    assert!(
+        check_with_coverage(root, "base", false, None, Coverage::Package)
+            .unwrap()
+            .report
+            .passed
+    );
+    assert!(changenote::status(root).unwrap().is_empty());
+}
+
 fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn walk(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
         for item in fs::read_dir(dir).unwrap() {

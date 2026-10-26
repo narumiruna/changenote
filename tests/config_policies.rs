@@ -176,6 +176,151 @@ fn linked_mixed_bumps_keep_direct_attribution_and_original_baseline() {
 }
 
 #[test]
+fn ignore_retains_notes_and_linked_baselines_without_mutating_paused_outputs() {
+    let dir = project(json!({"ignore":["b"],"linked":[["a","b"]]}));
+    let root = dir.path();
+    fs::write(root.join("b/VERSION"), "2.4.9\n").unwrap();
+    fs::write(root.join("b/SECOND"), "2.4.9\n").unwrap();
+    fs::write(root.join("b/CHANGELOG.md"), "Old content\n").unwrap();
+    package_setting(root, "b", "version_outputs", json!(["SECOND"]));
+    note(root, "paused", &[("b", Bump::Minor)]);
+    let paused = fs::read_to_string(root.join(".changenote/paused.md"))
+        .unwrap()
+        .replace('\n', "\r\n");
+    fs::write(root.join(".changenote/paused.md"), &paused).unwrap();
+    note(root, "active", &[("a", Bump::Patch)]);
+    let plan = status(root).unwrap();
+    assert_eq!(plan.len(), 1);
+    assert_eq!(plan[0].version.to_string(), "2.4.10");
+    version(root).unwrap();
+    assert_eq!(
+        fs::read_to_string(root.join(".changenote/paused.md")).unwrap(),
+        paused
+    );
+    assert!(!root.join(".changenote/active.md").exists());
+    assert_eq!(
+        fs::read_to_string(root.join("b/VERSION")).unwrap(),
+        "2.4.9\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("b/SECOND")).unwrap(),
+        "2.4.9\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("b/CHANGELOG.md")).unwrap(),
+        "Old content\n"
+    );
+    let before = snapshot(root);
+    assert!(version(root).unwrap().is_empty());
+    assert_eq!(snapshot(root), before);
+    let report = changenote::doctor(root);
+    assert!(
+        report
+            .checks
+            .iter()
+            .find(|c| c.name == "plan")
+            .unwrap()
+            .message
+            .starts_with("0 ")
+    );
+}
+
+#[test]
+fn ignored_fixed_groups_and_saved_batches_remain_unchanged() {
+    let dir = project(json!({"ignore":["a","b"],"fixed":[["a*","b"]]}));
+    note(
+        dir.path(),
+        "paused",
+        &[("a", Bump::Patch), ("b", Bump::Minor)],
+    );
+    fs::write(dir.path().join(".changenote/releases.json"), "[]\n").unwrap();
+    let before = snapshot(dir.path());
+    assert!(version(dir.path()).unwrap().is_empty());
+    assert_eq!(snapshot(dir.path()), before);
+    fs::write(dir.path().join("a/VERSION"), "invalid").unwrap();
+    assert!(status(dir.path()).is_err());
+}
+
+#[test]
+fn ignore_rejects_invalid_lists_and_mixed_notes_before_allocation_or_writes() {
+    for ignore in [
+        json!(null),
+        json!(["missing"]),
+        json!(["a", "a"]),
+        json!(["a*"]),
+        json!("a"),
+    ] {
+        let dir = project(json!({"ignore":ignore}));
+        let before = snapshot(dir.path());
+        assert!(status(dir.path()).is_err());
+        assert!(version(dir.path()).is_err());
+        assert_eq!(snapshot(dir.path()), before);
+    }
+    let dir = project(json!({"ignore":["a"],"fixed":[["a","b"]]}));
+    assert!(status(dir.path()).is_err());
+    let dir = project(json!({"ignore":["b"]}));
+    let root = dir.path();
+    let before = snapshot(root);
+    assert!(
+        add(
+            root,
+            "mixed",
+            vec!["a".into(), "b".into()],
+            Bump::Patch,
+            "Mixed"
+        )
+        .is_err()
+    );
+    assert!(
+        changenote::add_generated(
+            root,
+            vec![("a".into(), Bump::Patch), ("b".into(), Bump::Patch)],
+            "Mixed"
+        )
+        .is_err()
+    );
+    assert_eq!(snapshot(root), before);
+    fs::write(
+        root.join(".changenote/manual.md"),
+        "---\na: patch\nb: minor\n---\n\nMixed\n",
+    )
+    .unwrap();
+    let before = snapshot(root);
+    assert!(version(root).is_err());
+    assert_eq!(snapshot(root), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn failed_manager_restores_active_and_retained_notes_and_known_outputs() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = project(json!({"ignore":["b"]}));
+    let root = dir.path();
+    fs::write(
+        root.join("a/Cargo.toml"),
+        "[package]\nname = \"a\"\nversion = \"1.0.0\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("a/Cargo.lock"), "original lock").unwrap();
+    package_setting(root, "a", "version_file", json!("Cargo.toml"));
+    fs::create_dir(root.join("bin")).unwrap();
+    let manager = root.join("bin/cargo");
+    fs::write(&manager, "#!/bin/sh\nprintf changed > Cargo.lock\nexit 1\n").unwrap();
+    fs::set_permissions(&manager, fs::Permissions::from_mode(0o755)).unwrap();
+    note(root, "active", &[("a", Bump::Patch)]);
+    note(root, "paused", &[("b", Bump::Minor)]);
+    let before = snapshot(root);
+    let output = Command::new(env!("CARGO_BIN_EXE_changenote"))
+        .current_dir(root)
+        .arg("version")
+        .env("PATH", root.join("bin"))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert_eq!(snapshot(root), before);
+}
+
+#[test]
 fn fixed_patterns_expand_before_group_validation_and_keep_sorted_causes() {
     let dir = project(json!({"fixed":[["b","a*"]]}));
     let root = dir.path();

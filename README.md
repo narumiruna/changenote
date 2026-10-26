@@ -349,6 +349,20 @@ Existing public result layouts and API signatures remain supported; older detail
 Default status JSON and metadata-only saved batches are unchanged.
 Upgrade CLI and Action pins together. Dependency propagation is not implemented.
 
+## Pause package releases
+
+Use optional `"ignore": ["pkg-a"]` to pause configured packages without losing pending notes.
+Only explicit known names are accepted; reject duplicate names, globs, invalid types, and null. Omission and `[]` change nothing.
+Paused-only notes remain unchanged. A note cannot mix paused and active packages; `add` and planning reject that combination.
+Pause every member of a fixed group or none. A paused linked member stays unchanged but still supplies its original version to the group baseline.
+
+All configuration, notes, and current versions remain validated. PR checks still require direct notes for paused packages.
+A plan with only paused notes changes no files and preserves the saved batch.
+An active release consumes only its selected notes and updates only its selected outputs. A shared lockfile can change for another active package.
+Ignore affects pending planning only; it never suppresses publication of an already saved historical batch.
+There is no dependency graph, so this setting cannot verify whether an active package depends on a paused package. Review that relationship separately.
+Upgrade CLI and Action pins together before using ignore.
+
 ## Check PR notes
 
 ```sh

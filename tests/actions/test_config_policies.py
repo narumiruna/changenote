@@ -77,6 +77,43 @@ class ConfigPolicies(unittest.TestCase):
         self.assertEqual(len(json.loads(published["published-packages"])), 2)
         self.assertFalse((f.repo / "c/CHANGELOG.md").exists())
 
+    def test_ignore_keeps_paused_and_stale_notes_and_publishes_historical_batch(self):
+        f = self.f
+        (f.repo / "b").mkdir()
+        (f.repo / "b/VERSION").write_text("1.0.0\n")
+        config = json.loads((f.repo / ".changenote/config.json").read_text())
+        config["packages"]["b"] = {"path": "b", "version_file": "VERSION"}
+        self.config(packages=config["packages"], ignore=["b"])
+        f.cli("add", "paused", "--minor", "b", "-m", "Paused change")
+        f.commit("paused note")
+        paused = (f.repo / ".changenote/paused.md").read_bytes()
+        f.git("push", "origin", "main")
+        f.note()
+        f.action()
+        f.git("fetch", "origin", test_actions.BRANCH)
+        head = f.git("rev-parse", "FETCH_HEAD")
+        f.cli("add", "newer", "--minor", "pkg", "-m", "Later active change")
+        f.commit("note after release generation")
+        newer = (f.repo / ".changenote/newer.md").read_bytes()
+        f.git("push", "origin", "main")
+        f.git("merge", "--squash", head)
+        f.commit("merge stale release")
+        f.git("push", "origin", "main")
+        self.assertEqual((f.repo / ".changenote/paused.md").read_bytes(), paused)
+        self.assertEqual((f.repo / ".changenote/newer.md").read_bytes(), newer)
+        self.config(ignore=["pkg"])
+        f.git("push", "origin", "main")
+        _, preview = f.action("preview")
+        self.assertEqual(preview["ready"], "true")
+        _, result = f.action("publish")
+        self.assertEqual(result["published"], "true")
+        for body in (entry["body"] for entry in f.state()["releases"]):
+            self.assertNotIn("Paused change", body)
+            self.assertNotIn("Later active change", body)
+        self.assertEqual((f.repo / ".changenote/paused.md").read_bytes(), paused)
+        self.assertEqual((f.repo / ".changenote/newer.md").read_bytes(), newer)
+        self.assertFalse((f.repo / "b/CHANGELOG.md").exists())
+
     def test_base_branch_does_not_retarget_release_or_explicit_check(self):
         f = self.f
         self.config(base_branch="unavailable-comparison")

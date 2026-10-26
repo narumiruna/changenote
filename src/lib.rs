@@ -24,7 +24,7 @@ use anyhow::{Context, Result, ensure};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::Write,
     path::{Component, Path, PathBuf},
@@ -170,6 +170,8 @@ struct ConfigFile {
     fixed: Vec<Vec<String>>,
     #[serde(default)]
     linked: Vec<Vec<String>>,
+    #[serde(default)]
+    ignore: Vec<String>,
     changelog: Option<sections::ChangelogConfig>,
 }
 
@@ -201,6 +203,7 @@ pub(crate) struct ReleaseConfig {
     changed_file_patterns: patterns::FilePatterns,
     fixed: Vec<Vec<String>>,
     linked: Vec<Vec<String>>,
+    ignore: BTreeSet<String>,
     changelog: Option<sections::ChangelogConfig>,
     package_options: BTreeMap<String, PackageOptions>,
 }
@@ -267,6 +270,24 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
             .map(String::as_str)
             .collect::<Vec<_>>(),
     )?;
+    let mut ignore = BTreeSet::new();
+    for name in file.ignore {
+        ensure!(
+            config.packages.contains_key(&name),
+            "unknown ignored package {name}"
+        );
+        ensure!(
+            ignore.insert(name.clone()),
+            "duplicate ignored package {name}"
+        );
+    }
+    for group in &fixed {
+        let paused = group.iter().filter(|name| ignore.contains(*name)).count();
+        ensure!(
+            paused == 0 || paused == group.len(),
+            "ignore cannot pause part of a fixed group"
+        );
+    }
     let mut members = std::collections::BTreeSet::new();
     for group in &fixed {
         ensure!(
@@ -382,6 +403,7 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
         changed_file_patterns: file.changed_file_patterns,
         fixed,
         linked: file.linked,
+        ignore,
         changelog: file.changelog,
         package_options,
     })
@@ -547,9 +569,22 @@ fn notes(root: &Path, config: &ReleaseConfig) -> Result<Vec<(PathBuf, NoteData)>
                 path.display()
             );
         }
+        validate_note_pause(config, &note.packages)?;
         result.push((path, note));
     }
     Ok(result)
+}
+
+fn validate_note_pause(config: &ReleaseConfig, packages: &BTreeMap<String, Bump>) -> Result<()> {
+    let paused = packages
+        .keys()
+        .filter(|name| config.ignore.contains(*name))
+        .count();
+    ensure!(
+        paused == 0 || paused == packages.len(),
+        "a note cannot mix ignored and active packages"
+    );
+    Ok(())
 }
 
 fn plan(
@@ -763,7 +798,7 @@ fn note_content(
             changelog.validate_type(kind)?;
         }
     }
-    let config = release_config.config;
+    let config = &release_config.config;
     let mut changes = BTreeMap::new();
     for (pkg, bump) in packages {
         ensure!(config.packages.contains_key(&pkg), "unknown package {pkg}");
@@ -771,6 +806,7 @@ fn note_content(
             ensure!(previous == bump, "conflicting bumps for package {pkg}");
         }
     }
+    validate_note_pause(&release_config, &changes)?;
     let mut metadata = serde_yaml::to_value(&changes)?;
     if let Some(kind) = kind {
         metadata.as_mapping_mut().unwrap().insert(
@@ -818,6 +854,12 @@ pub fn version_with_output(
     if releases.is_empty() {
         return Ok(releases);
     }
+    let released: BTreeSet<_> = releases.iter().map(|release| &release.package).collect();
+    let consumed: Vec<_> = notes
+        .iter()
+        .filter(|(_, note)| note.packages.keys().any(|name| released.contains(name)))
+        .map(|(path, _)| path.clone())
+        .collect();
     // Prepare every output before changing any input.
     let version_paths = release_version_paths(root, &release_config, &releases)?;
     let locks = if sync_lockfiles {
@@ -860,14 +902,14 @@ pub fn version_with_output(
         .into_iter()
         .chain(locks.iter().map(|lock| lock.path.clone()))
         .chain(writes.iter().map(|(path, _)| path.clone()))
-        .chain(notes.iter().map(|(path, _)| path.clone()))
+        .chain(consumed.iter().cloned())
         .collect();
     transaction::apply(&paths, || {
         lockfile::apply(&manifests, &locks)?;
         for (path, content) in writes {
             fs::write(path, content)?;
         }
-        for (path, _) in notes {
+        for path in consumed {
             fs::remove_file(path)?;
         }
         Ok(())

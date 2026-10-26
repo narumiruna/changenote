@@ -121,7 +121,7 @@ pub(crate) fn plan(
         .collect::<Result<BTreeMap<_, _>>>()?;
     let mut targets = BTreeMap::new();
     for (name, current) in &versions {
-        if config.fixed.iter().any(|g| g.contains(name)) {
+        if config.ignore.contains(name) || config.fixed.iter().any(|g| g.contains(name)) {
             continue;
         }
         if let Some(bump) = notes.iter().filter_map(|(_, n)| n.packages.get(name)).max() {
@@ -132,6 +132,9 @@ pub(crate) fn plan(
         }
     }
     for group in &config.fixed {
+        if config.ignore.contains(&group[0]) {
+            continue;
+        }
         let sources: Vec<_> = notes
             .iter()
             .filter(|(_, n)| group.iter().any(|p| n.packages.contains_key(p)))
