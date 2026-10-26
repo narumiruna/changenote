@@ -305,7 +305,7 @@ fn failed_manager_restores_active_and_retained_notes_and_known_outputs() {
     package_setting(root, "a", "version_file", json!("Cargo.toml"));
     fs::create_dir(root.join("bin")).unwrap();
     let manager = root.join("bin/cargo");
-    fs::write(&manager, "#!/bin/sh\nprintf changed > Cargo.lock\nexit 1\n").unwrap();
+    fs::write(&manager, "#!/bin/sh\nprintf changed > Cargo.lock\nprintf damaged > ../.changenote/paused.md\nexit 1\n").unwrap();
     fs::set_permissions(&manager, fs::Permissions::from_mode(0o755)).unwrap();
     note(root, "active", &[("a", Bump::Patch)]);
     note(root, "paused", &[("b", Bump::Minor)]);
@@ -318,6 +318,58 @@ fn failed_manager_restores_active_and_retained_notes_and_known_outputs() {
         .unwrap();
     assert!(!output.status.success());
     assert_eq!(snapshot(root), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_shared_lock_can_change_while_a_paused_manifest_stays_unchanged() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = project(json!({"ignore":["b"]}));
+    let root = dir.path();
+    for name in ["a", "b"] {
+        fs::write(
+            root.join(name).join("Cargo.toml"),
+            format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\n"),
+        )
+        .unwrap();
+    }
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"a\",\"b\"]\n",
+    )
+    .unwrap();
+    fs::write(root.join("Cargo.lock"), "original lock").unwrap();
+    package_setting(root, "a", "version_outputs", json!(["Cargo.toml"]));
+    package_setting(root, "b", "version_file", json!("Cargo.toml"));
+    note(root, "active", &[("a", Bump::Patch)]);
+    note(root, "paused", &[("b", Bump::Minor)]);
+    let paused = fs::read(root.join("b/Cargo.toml")).unwrap();
+    fs::create_dir(root.join("bin")).unwrap();
+    let manager = root.join("bin/cargo");
+    fs::write(&manager, "#!/bin/sh\nprintf refreshed > Cargo.lock\n").unwrap();
+    fs::set_permissions(&manager, fs::Permissions::from_mode(0o755)).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_changenote"))
+        .current_dir(root)
+        .arg("version")
+        .env("PATH", root.join("bin"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(root.join("b/Cargo.toml")).unwrap(), paused);
+    assert_eq!(
+        fs::read_to_string(root.join("Cargo.lock")).unwrap(),
+        "refreshed"
+    );
+    assert!(root.join(".changenote/paused.md").exists());
+    assert!(
+        fs::read_to_string(root.join("a/Cargo.toml"))
+            .unwrap()
+            .contains("1.0.1")
+    );
 }
 
 #[test]

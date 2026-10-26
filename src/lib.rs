@@ -919,7 +919,7 @@ pub fn version_with_output(
         .into_iter()
         .chain(locks.iter().map(|lock| lock.path.clone()))
         .chain(writes.iter().map(|(path, _)| path.clone()))
-        .chain(consumed.iter().cloned())
+        .chain(notes.iter().map(|(path, _)| path.clone()))
         .collect();
     transaction::apply(&paths, || {
         lockfile::apply(&manifests, &locks)?;

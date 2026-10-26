@@ -166,17 +166,15 @@ fn disabled_output_still_supports_local_tags_in_a_fixture_repository() {
     use std::process::Command;
     let dir = project(json!({"enabled":false}));
     let root = dir.path();
-    for args in [vec!["init", "-qb", "main"]] {
-        assert!(
-            Command::new("git")
-                .current_dir(root)
-                .args(args)
-                .output()
-                .unwrap()
-                .status
-                .success()
-        );
-    }
+    assert!(
+        Command::new("git")
+            .current_dir(root)
+            .args(["init", "-qb", "main"])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
     add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
     version(root).unwrap();
     assert!(
@@ -202,7 +200,20 @@ fn disabled_output_still_supports_local_tags_in_a_fixture_repository() {
         .output()
         .unwrap();
     assert!(commit.status.success());
-    assert_eq!(changenote::tag(root).unwrap(), ["v1.0.1"]);
+    let tag = Command::new(env!("CARGO_BIN_EXE_changenote"))
+        .current_dir(root)
+        .arg("tag")
+        .env("GIT_COMMITTER_NAME", "Test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+        .output()
+        .unwrap();
+    assert!(
+        tag.status.success(),
+        "{}",
+        String::from_utf8_lossy(&tag.stderr)
+    );
+    assert_eq!(String::from_utf8(tag.stdout).unwrap().trim(), "v1.0.1");
+    assert!(changenote::tag(root).unwrap().is_empty());
     assert!(!root.join("CHANGELOG.md").exists());
 }
 

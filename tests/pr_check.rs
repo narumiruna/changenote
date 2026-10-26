@@ -277,6 +277,59 @@ fn paused_packages_still_require_direct_changed_notes() {
     assert!(changenote::status(root).unwrap().is_empty());
 }
 
+#[test]
+fn filtering_all_paths_does_not_bypass_validation_or_exemptions() {
+    for failure in ["note", "version", "dirty", "history", "config"] {
+        let dir = project();
+        let root = dir.path();
+        setting(
+            root,
+            "changed_file_patterns",
+            serde_json::json!(["never/**"]),
+        );
+        commit(root);
+        git(root, &["branch", "-f", "base", "HEAD"]);
+        match failure {
+            "note" => write(
+                root,
+                ".changenote/bad.md",
+                "---\nmissing: patch\n---\n\nBad\n",
+            ),
+            "version" => write(root, "packages/pkg/VERSION", "not a version"),
+            "dirty" => write(root, "untracked.txt", "Dirty"),
+            "config" => setting(root, "changed_file_patterns", serde_json::json!([])),
+            "history" => {
+                git(root, &["checkout", "--orphan", "unrelated"]);
+                write(root, "outside.txt", "New root");
+            }
+            _ => unreachable!(),
+        }
+        if failure != "dirty" {
+            commit(root);
+        }
+        for coverage in ["pr", "package"] {
+            let output = cli(
+                root,
+                &[
+                    "check",
+                    "--since",
+                    "base",
+                    "--coverage",
+                    coverage,
+                    "--skip-release",
+                    "--reason",
+                    "Docs",
+                ],
+            );
+            assert!(!output.status.success(), "{failure}: {coverage}");
+            assert!(
+                output.stdout.is_empty(),
+                "{failure}: validation is not a coverage report"
+            );
+        }
+    }
+}
+
 fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn walk(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
         for item in fs::read_dir(dir).unwrap() {

@@ -37,7 +37,12 @@ if [[ $(jq length "$temp/plan.json") == 0 ]]; then
   exit 0
 fi
 output has-notes true
-"$cli" status --include-note-paths --include-note-sections > "$temp/details.json"
+detail_args=(status --include-note-sections)
+# Do not impose UTF-8 note paths on historical configurations without linked groups.
+if jq -e '(.linked // []) | length > 0' .changenote/config.json >/dev/null; then
+  detail_args+=(--include-note-paths)
+fi
+"$cli" "${detail_args[@]}" > "$temp/details.json"
 "$cli" version > "$temp/applied.json"
 jq -e --slurpfile expected "$temp/plan.json" '. == $expected[0]' "$temp/applied.json" >/dev/null || fail 'Version output differs from status.'
 stage_release "$temp/plan.json"

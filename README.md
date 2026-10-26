@@ -47,7 +47,7 @@ git push origin refs/tags/v0.1.0
 
 `version` takes the highest requested bump for each package and applies it once. Multiple patch notes cause one patch bump, not multiple bumps. Major, minor, and patch follow stable SemVer rules, including versions below 1.0.0.
 
-The command updates each configured version file, adds entries to `CHANGELOG.md`, saves the latest release batch to `.changenote/releases.json`, and removes consumed notes. Saved batches contain only `package`, `old_version`, `version`, `bump`, and `tag`; summaries remain in the package changelogs, not in saved `notes` fields. Pending `status` and `version` command output still include notes. New entries follow the existing title and introduction, before the first ATX SemVer version heading outside fenced or indented code. A file without a version heading is treated as an introduction. Prior content is not reformatted. By default, notes are grouped by their own bump under `Major Changes`, `Minor Changes`, and `Patch Changes`, in that order; empty groups are omitted. Multiline Markdown remains inside each note's list item. A run without pending notes does not change files or clear the saved batch.
+The command updates each configured version file, saves the latest release batch to `.changenote/releases.json`, and removes consumed notes. It also adds entries to `CHANGELOG.md` unless changelog output is disabled. Saved batches contain only `package`, `old_version`, `version`, `bump`, and `tag`; with default output, summaries remain in the package changelogs, not in saved `notes` fields. Pending `status` and `version` command output still include notes. New entries follow the existing title and introduction, before the first ATX SemVer version heading outside fenced or indented code. A file without a version heading is treated as an introduction. Prior content is not reformatted. By default, notes are grouped by their own bump under `Major Changes`, `Minor Changes`, and `Patch Changes`, in that order; empty groups are omitted. Multiline Markdown remains inside each note's list item. A run without pending notes does not change files or clear the saved batch.
 
 ### Initialize from an existing version file
 
@@ -81,6 +81,9 @@ Create `.changenote/config.json` with explicit packages:
 ```
 
 The optional `$schema` field enables editor validation and completion with the repository's [JSON Schema](schema.json). `init` adds the GitHub raw URL shown above. Replace `main` with a commit SHA to pin the schema, or use a local schema path. The CLI accepts the field as metadata; it does not fetch the schema or use it for validation. Configurations without `$schema` remain supported. Unknown configuration fields are rejected. The CLI also checks paths, files, and versions that the schema cannot verify.
+
+Rust `load_config()` validates the entire file but returns only the primary-package settings and schema metadata.
+Serializing this view drops extended settings; do not use it to round-trip an extended configuration.
 
 Each package directory must exist and contain its version file, for example `packages/pkg-a/VERSION`:
 
@@ -359,7 +362,7 @@ When any member has a pending note, the planner takes the highest current versio
 
 Direct summaries, their bumps, and their paths stay with the named package. A propagated member has empty `notes` and direct `note_paths`. Detailed status adds `fixed_group` with sorted `members`, `base_version`, and filename-ordered `source_note_paths` for all notes that activate the group. Those sources are not direct package notes. Rust callers can use `status_with_note_paths()` without changing the existing `status()` API or public struct layouts.
 
-All member version files, changelogs, and tags are release outputs. A member without direct notes gets the text “Released with its fixed version group; no direct changes.” in its changelog, Release PR, and GitHub Release. Dependency ranges remain unchanged; supported existing lockfiles are synchronized. Upgrade CLI and Actions together before using fixed config; older CLIs reject it.
+All member version files and tags are release outputs. Changelogs are also outputs unless explicitly disabled. A member without direct notes gets the text “Released with its fixed version group; no direct changes.” in its changelog, Release PR, and GitHub Release. Dependency ranges remain unchanged; supported existing lockfiles are synchronized. Upgrade CLI and Actions together before using fixed config; older CLIs reject it.
 
 ## Linked version groups
 

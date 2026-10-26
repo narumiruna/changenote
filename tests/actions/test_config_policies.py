@@ -1,5 +1,6 @@
 """Exercise language-independent configuration with the real CLI and local GitHub mock."""
 import json
+import os
 import unittest
 
 import test_actions
@@ -161,6 +162,17 @@ class ConfigPolicies(unittest.TestCase):
         self.assertEqual(preview["ready"], "true")
         _, published = f.action("publish")
         self.assertEqual(published["published"], "true")
+
+    @unittest.skipUnless(os.name == "posix", "non-UTF-8 POSIX note paths")
+    def test_release_pr_without_linked_groups_retains_non_utf8_note_support(self):
+        f = self.f
+        f.note()
+        target = f.repo / os.fsdecode(b".changenote/note-\xff.md")
+        (f.repo / ".changenote/fix.md").rename(target)
+        f.commit("rename note")
+        f.git("push", "origin", "main")
+        _, outputs = f.action()
+        self.assertEqual(outputs["pr-operation"], "created")
 
     def test_base_branch_does_not_retarget_release_or_explicit_check(self):
         f = self.f

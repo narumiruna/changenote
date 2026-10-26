@@ -25,11 +25,11 @@ impl FilePatterns {
                 None => (false, value.as_str()),
             };
             ensure!(
-                !pattern.is_empty()
-                    && !pattern.starts_with('/')
-                    && !pattern.contains(['\\', '\0'])
-                    && !(pattern.as_bytes().get(1) == Some(&b':')
-                        && pattern.as_bytes()[0].is_ascii_alphabetic()),
+                !(pattern.is_empty()
+                    || pattern.starts_with('/')
+                    || pattern.contains(['\\', '\0'])
+                    || (pattern.as_bytes().get(1) == Some(&b':')
+                        && pattern.as_bytes()[0].is_ascii_alphabetic())),
                 "file patterns must be nonempty relative paths without backslashes"
             );
             for component in pattern.split('/') {
