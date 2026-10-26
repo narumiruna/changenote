@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use changenote::{Bump, Coverage};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
 use semver::Version;
 use std::{io::Read, path::PathBuf};
 
@@ -81,7 +81,7 @@ enum Commands {
     /// Prints JSON without writes. Package coverage requires direct notes for each changed package.
     Check {
         #[arg(long)]
-        since: String,
+        since: Option<String>,
         #[arg(long, value_enum, default_value = "pr")]
         coverage: Coverage,
         /// Exempt this PR from the missing-note rule, not input validation.
@@ -204,6 +204,17 @@ fn run() -> Result<()> {
             skip_release,
             reason,
         } => {
+            let since = match since {
+                Some(reference) => reference,
+                None => changenote::configured_base_branch(&cli.root)?.unwrap_or_else(|| {
+                    Cli::command()
+                        .error(
+                            ErrorKind::MissingRequiredArgument,
+                            "provide --since or configure base_branch",
+                        )
+                        .exit()
+                }),
+            };
             let report = changenote::check_with_coverage(
                 &cli.root,
                 &since,

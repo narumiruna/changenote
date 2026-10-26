@@ -333,6 +333,14 @@ changenote check --since origin/main --coverage package
 changenote check --since origin/main --skip-release --reason "Documentation only"
 ```
 
+Set optional `base_branch` in `.changenote/config.json` to select a default comparison ref, for example `"base_branch": "origin/main"`.
+An explicit `--since` takes priority. If neither is present, the CLI reports a missing argument.
+The selected ref must exist locally; the CLI does not fetch, guess a branch, or change refs.
+An unused configured ref need not exist, but its configuration value must still be valid.
+This setting does not select the Release PR or publication target; Action inputs remain authoritative.
+Rust callers can use `configured_base_branch()`; existing explicit-ref check APIs remain supported.
+`load_config()` validates this setting but does not retain it in the primary-package view.
+
 `check` requires the Git repository root, a clean working tree, full enough history to find a merge base, and an available base ref. It compares tracked paths between `git merge-base <ref> HEAD` and `HEAD`; it does not include uncommitted or untracked changes. File renames report both old and new paths. Nested packages use the deepest matching configured directory. Files outside all configured packages are reported but do not imply a package release.
 
 If packages changed, at least one valid top-level note must be added, modified, or renamed in that comparison and remain in `HEAD`. Unchanged old notes and deleted notes do not satisfy the check. The default `--coverage pr` is a **PR-level check, not proof of per-package note coverage**. No file patterns are excluded automatically. Use the explicit exemption for documentation-only or test-only changes inside package directories. `--skip-release` requires a non-empty `--reason`; it never bypasses config, version, note, or Git validation.

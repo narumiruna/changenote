@@ -10,7 +10,9 @@ pub use planning::{
     status_with_note_sections,
 };
 mod json_value;
-pub use check::{CheckReport, Coverage, CoverageReport, check, check_with_coverage};
+pub use check::{
+    CheckReport, Coverage, CoverageReport, check, check_with_coverage, configured_base_branch,
+};
 mod doctor;
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor};
 mod lockfile;
@@ -159,6 +161,8 @@ struct ConfigFile {
     #[serde(rename = "$schema")]
     schema: Option<String>,
     packages: BTreeMap<String, PackageFile>,
+    #[serde(default, deserialize_with = "deserialize_optional_string")]
+    base_branch: Option<String>,
     #[serde(default)]
     fixed: Vec<Vec<String>>,
     changelog: Option<sections::ChangelogConfig>,
@@ -171,11 +175,11 @@ struct PackageFile {
     version_file: PathBuf,
     #[serde(default)]
     version_outputs: Vec<PathBuf>,
-    #[serde(default, deserialize_with = "deserialize_tag_prefix")]
+    #[serde(default, deserialize_with = "deserialize_optional_string")]
     tag_prefix: Option<String>,
 }
 
-fn deserialize_tag_prefix<'de, D: serde::Deserializer<'de>>(
+fn deserialize_optional_string<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<Option<String>, D::Error> {
     String::deserialize(deserializer).map(Some)
@@ -188,6 +192,7 @@ struct PackageOptions {
 
 pub(crate) struct ReleaseConfig {
     config: Config,
+    base_branch: Option<String>,
     fixed: Vec<Vec<String>>,
     changelog: Option<sections::ChangelogConfig>,
     package_options: BTreeMap<String, PackageOptions>,
@@ -206,7 +211,7 @@ impl std::ops::Deref for NoteData {
 }
 
 /// Validate all configuration and return only the primary package settings.
-/// Fixed groups, sections, additional outputs, and tag prefixes are not retained in this view.
+/// Extended settings, including the check base ref, are not retained in this view.
 pub fn load_config(root: &Path) -> Result<Config> {
     Ok(load_release_config(root)?.config)
 }
@@ -216,6 +221,14 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
     let file: ConfigFile = serde_json::from_str(&fs::read_to_string(path)?)?;
     if let Some(changelog) = &file.changelog {
         changelog.validate()?;
+    }
+    if let Some(reference) = &file.base_branch {
+        ensure!(
+            !reference.is_empty()
+                && reference.trim() == reference
+                && !reference.chars().any(char::is_control),
+            "base_branch must be nonempty, trimmed, and contain no control characters"
+        );
     }
     let mut packages = BTreeMap::new();
     let mut package_options = BTreeMap::new();
@@ -334,6 +347,7 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
     }
     Ok(ReleaseConfig {
         config,
+        base_branch: file.base_branch,
         fixed: file.fixed,
         changelog: file.changelog,
         package_options,

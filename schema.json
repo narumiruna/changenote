@@ -11,6 +11,11 @@
       "description": "Schema reference for editors. The CLI does not fetch or validate this reference.",
       "type": ["string", "null"]
     },
+    "base_branch": {
+      "description": "Local Git comparison ref for check when --since is omitted. Does not select release Action branches.",
+      "type": "string",
+      "minLength": 1
+    },
     "fixed": {
       "description": "Disjoint groups of at least two known packages that release at one version. Membership is also checked by the CLI.",
       "type": "array",

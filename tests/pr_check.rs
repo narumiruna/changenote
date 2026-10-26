@@ -66,6 +66,62 @@ fn project() -> TempDir {
     git(root, &["branch", "base"]);
     dir
 }
+fn setting(root: &Path, key: &str, value: serde_json::Value) {
+    let path = root.join(".changenote/config.json");
+    let mut config: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    config[key] = value;
+    fs::write(path, serde_json::to_string(&config).unwrap()).unwrap();
+}
+
+#[test]
+fn configured_ref_fallback_and_override_are_read_only() {
+    let dir = project();
+    let root = dir.path();
+    assert_eq!(cli(root, &["check"]).status.code(), Some(2));
+    assert!(cli(root, &["check", "--since", "HEAD"]).status.success());
+    setting(root, "base_branch", "base".into());
+    commit(root);
+    assert!(cli(root, &["check"]).status.success());
+    setting(root, "base_branch", "unavailable".into());
+    commit(root);
+    assert!(cli(root, &["check", "--since", "HEAD"]).status.success());
+    assert!(!cli(root, &["check"]).status.success());
+    git(root, &["update-ref", "refs/remotes/origin/base", "base"]);
+    setting(root, "base_branch", "refs/remotes/origin/base".into());
+    commit(root);
+    assert!(cli(root, &["check"]).status.success());
+    assert_eq!(
+        changenote::configured_base_branch(root).unwrap().as_deref(),
+        Some("refs/remotes/origin/base")
+    );
+}
+
+#[test]
+fn configured_ref_rejects_invalid_values_even_with_override() {
+    for value in [
+        serde_json::Value::Null,
+        true.into(),
+        3.into(),
+        "".into(),
+        " ".into(),
+        " base".into(),
+        "base ".into(),
+        "base\n".into(),
+        "base\0x".into(),
+        serde_json::json!([]),
+    ] {
+        let dir = project();
+        setting(dir.path(), "base_branch", value);
+        commit(dir.path());
+        assert!(changenote::configured_base_branch(dir.path()).is_err());
+        assert!(
+            !cli(dir.path(), &["check", "--since", "HEAD"])
+                .status
+                .success()
+        );
+    }
+}
+
 fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn walk(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
         for item in fs::read_dir(dir).unwrap() {

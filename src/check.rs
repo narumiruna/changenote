@@ -31,6 +31,11 @@ pub struct CoverageReport {
     pub uncovered_packages: Vec<String>,
 }
 
+/// Read the optional comparison ref after validating configuration; does not run Git.
+pub fn configured_base_branch(root: &Path) -> Result<Option<String>> {
+    Ok(load_release_config(root)?.base_branch)
+}
+
 /// Check committed changes only, with the original PR-level report.
 pub fn check(
     root: &Path,
