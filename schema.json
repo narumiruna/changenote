@@ -33,13 +33,13 @@
       }
     },
     "fixed": {
-      "description": "Disjoint groups of at least two known packages that release at one version. Membership is also checked by the CLI.",
+      "description": "Groups of names or * and ? patterns. Each must resolve to at least two distinct disjoint packages; checked by the CLI.",
       "type": "array",
       "items": {
         "type": "array",
-        "minItems": 2,
+        "minItems": 1,
         "uniqueItems": true,
-        "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+        "items": { "type": "string", "pattern": "^[A-Za-z0-9_*?-]+$" }
       }
     },
     "changelog": {

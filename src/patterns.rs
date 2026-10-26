@@ -1,4 +1,4 @@
-//! Validated package-relative file patterns. Matching never uses lossy paths.
+//! Validated file and package-name patterns. Matching never uses lossy paths.
 use anyhow::{Result, ensure};
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use serde::{Deserialize, Deserializer, de::Error};
@@ -69,6 +69,46 @@ impl FilePatterns {
     }
 }
 
+pub(crate) fn expand_fixed(groups: &[Vec<String>], names: &[&str]) -> Result<Vec<Vec<String>>> {
+    groups
+        .iter()
+        .map(|group| {
+            let mut result = Vec::new();
+            for pattern in group {
+                ensure!(
+                    !pattern.is_empty()
+                        && pattern
+                            .bytes()
+                            .all(|c| c.is_ascii_alphanumeric() || b"-_*?".contains(&c)),
+                    "fixed patterns support only names, * and ?: {pattern}"
+                );
+                let mut normalized = String::new();
+                for ch in pattern.chars() {
+                    if ch != '*' || !normalized.ends_with('*') {
+                        normalized.push(ch);
+                    }
+                }
+                let matcher = GlobBuilder::new(&normalized)
+                    .literal_separator(true)
+                    .build()?
+                    .compile_matcher();
+                let matches: Vec<_> = names
+                    .iter()
+                    .filter(|name| matcher.is_match(name))
+                    .map(|name| name.to_string())
+                    .collect();
+                ensure!(
+                    !matches.is_empty(),
+                    "unknown fixed package or unmatched pattern: {pattern}"
+                );
+                result.extend(matches);
+            }
+            result.sort();
+            Ok(result)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,6 +131,28 @@ mod tests {
         }
         assert!(!patterns(&["src/*"]).matches(Path::new("src/a/b.rs")));
         assert!(patterns(&["**/x"]).matches(Path::new("x")));
+    }
+
+    #[test]
+    fn fixed_name_contract_is_case_sensitive_and_has_no_path_semantics() {
+        let names = ["sdk-a", "sdk-b", "Sdk-c", "cli"];
+        for pattern in ["sdk-*", "sdk-?", "sdk-***"] {
+            assert_eq!(
+                expand_fixed(&[vec![pattern.into()]], &names).unwrap()[0],
+                ["sdk-a", "sdk-b"]
+            );
+        }
+        for bad in [
+            "sdk-[ab]",
+            "{sdk-a,sdk-b}",
+            "!sdk-*",
+            "sdk/a",
+            "sdk\\a",
+            "@(sdk-a)",
+            "missing*",
+        ] {
+            assert!(expand_fixed(&[vec![bad.into()]], &names).is_err());
+        }
     }
 
     #[test]

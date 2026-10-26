@@ -176,6 +176,46 @@ fn linked_mixed_bumps_keep_direct_attribution_and_original_baseline() {
 }
 
 #[test]
+fn fixed_patterns_expand_before_group_validation_and_keep_sorted_causes() {
+    let dir = project(json!({"fixed":[["b","a*"]]}));
+    let root = dir.path();
+    note(root, "one", &[("a", Bump::Patch)]);
+    let releases = changenote::status_with_note_paths(root).unwrap();
+    assert_eq!(releases.len(), 2);
+    assert_eq!(
+        releases[0].fixed_group.as_ref().unwrap().members,
+        ["a", "b"]
+    );
+    version(root).unwrap();
+    assert_eq!(
+        fs::read_to_string(root.join("c/VERSION")).unwrap(),
+        "1.0.0\n"
+    );
+    let dir = project(json!({"fixed":[["***"]]}));
+    note(dir.path(), "one", &[("a", Bump::Patch)]);
+    assert_eq!(status(dir.path()).unwrap().len(), 4);
+    for fixed in [
+        json!([["missing*"]]),
+        json!([["a*"]]),
+        json!([["a", "*"]]),
+        json!([["a*", "b"], ["b", "c"]]),
+        json!([["[ab]"]]),
+        json!([["{a,b}"]]),
+        json!([["!a"]]),
+        json!([["a/b"]]),
+        json!([["A*"]]),
+        json!([[""]]),
+    ] {
+        let dir = project(json!({"fixed":fixed}));
+        let before = snapshot(dir.path());
+        assert!(version(dir.path()).is_err());
+        assert_eq!(snapshot(dir.path()), before);
+    }
+    let dir = project(json!({"fixed":[["a*","b"]],"linked":[["b","c"]]}));
+    assert!(status(dir.path()).is_err());
+}
+
+#[test]
 fn linked_validation_overflow_and_collision_fail_before_writes() {
     for linked in [
         json!(null),

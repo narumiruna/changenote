@@ -259,8 +259,16 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
         schema: file.schema,
         packages,
     };
+    let fixed = patterns::expand_fixed(
+        &file.fixed,
+        &config
+            .packages
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+    )?;
     let mut members = std::collections::BTreeSet::new();
-    for group in &file.fixed {
+    for group in &fixed {
         ensure!(
             group.len() >= 2,
             "fixed groups require at least two packages"
@@ -372,7 +380,7 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
         config,
         base_branch: file.base_branch,
         changed_file_patterns: file.changed_file_patterns,
-        fixed: file.fixed,
+        fixed,
         linked: file.linked,
         changelog: file.changelog,
         package_options,

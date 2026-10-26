@@ -57,6 +57,26 @@ class ConfigPolicies(unittest.TestCase):
         _, result = f.action("publish")
         self.assertEqual(result["published"], "true")
 
+    def test_fixed_globs_replay_historical_not_live_membership(self):
+        f = self.f
+        (f.repo / "b").mkdir()
+        (f.repo / "b/VERSION").write_text("2.0.0\n")
+        config = json.loads((f.repo / ".changenote/config.json").read_text())
+        config["packages"]["b"] = {"path": "b", "version_file": "VERSION"}
+        self.config(packages=config["packages"], fixed=[["*"]])
+        f.git("push", "origin", "main")
+        f.release()
+        (f.repo / "c").mkdir()
+        (f.repo / "c/VERSION").write_text("3.0.0\n")
+        config["packages"]["c"] = {"path": "c", "version_file": "VERSION"}
+        self.config(packages=config["packages"])
+        f.git("push", "origin", "main")
+        _, preview = f.action("preview")
+        self.assertEqual(len(json.loads(preview["publication-plan"])), 2)
+        _, published = f.action("publish")
+        self.assertEqual(len(json.loads(published["published-packages"])), 2)
+        self.assertFalse((f.repo / "c/CHANGELOG.md").exists())
+
     def test_base_branch_does_not_retarget_release_or_explicit_check(self):
         f = self.f
         self.config(base_branch="unavailable-comparison")

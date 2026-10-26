@@ -317,7 +317,12 @@ Add an optional top-level `fixed` field to the config:
 }
 ```
 
-Each group must contain at least two distinct known names. Groups cannot overlap; globs, unknown names, invalid types, and duplicate memberships are rejected. Absent `fixed` and `fixed: []` mean independent versions. The existing Rust `Config` struct remains a package view: `load_config()` validates fixed settings, but serializing its return value does not preserve them. Do not use that view to round-trip a config with fixed settings.
+Each group must resolve to at least two distinct known package names. Literal names and case-sensitive name patterns using `*` and `?` are supported, for example `"fixed": [["sdk-*"]]`.
+`*` matches zero or more name characters; `?` matches one. Consecutive stars are equivalent to one star, with no recursive-path meaning.
+Patterns match configured package keys, not directories or manifest names. Packages still require explicit declarations; notes and `add --package` still use actual names.
+Reject unmatched patterns, singleton expanded groups, duplicate matches within or across groups, and overlap with linked groups.
+Exclusions, classes, braces, path separators, escapes, extglobs, and regular expressions are not supported. This subset is not picomatch compatibility.
+Resolved members are sorted. Adding a configured package that matches a pattern changes future group membership; historical releases use historical configuration. Absent `fixed` and `fixed: []` mean independent versions. The existing Rust `Config` struct remains a package view: `load_config()` validates fixed settings, but serializing its return value does not preserve them. Do not use that view to round-trip a config with fixed settings.
 
 When any member has a pending note, the planner takes the highest current version in the group, applies the highest requested member bump once, and releases every member at that version. Each result keeps its actual `old_version`. For example, members at `1.0.0` and `2.4.9` with a patch note release together at `2.4.10`. The change for a lower-version member can therefore exceed the requested bump. A group without pending notes does not synchronize differing versions.
 
