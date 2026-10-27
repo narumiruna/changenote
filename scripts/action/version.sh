@@ -48,7 +48,9 @@ jq -e --slurpfile expected "$temp/plan.json" '. == $expected[0]' "$temp/applied.
 stage_release "$temp/plan.json"
 tree=$(git write-tree)
 expected_head=$previous
-if [[ -z $previous || $(git rev-parse "$previous^{tree}") != "$tree" ]]; then
+# Equal trees can still have a stale base after a pending note is renamed.
+if [[ -z $previous || $(git rev-parse "$previous^{tree}") != "$tree" ]] ||
+  ! git merge-base --is-ancestor "$base_sha" "$previous"; then
   git commit -m "${INPUT_COMMIT_MESSAGE:-chore(release): version packages}"
   remote_git push --force-with-lease="refs/heads/$branch:$previous" "$remote_url" "HEAD:refs/heads/$branch"
   expected_head=$(git rev-parse HEAD)

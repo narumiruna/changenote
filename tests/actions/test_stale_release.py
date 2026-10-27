@@ -1,6 +1,7 @@
 """Verify releases that leave notes added after Release PR generation pending."""
 
 import json
+import os
 import unittest
 
 import test_actions
@@ -81,6 +82,27 @@ class StaleRelease(unittest.TestCase):
     def test_pending_paths_are_literal_and_nul_delimited(self):
         self.pending_path = ".changenote/new[1]\n*.md"
         self.assert_published(self.release())
+
+    @unittest.skipUnless(os.name == "posix", "non-UTF-8 POSIX note paths")
+    def test_non_utf8_pending_paths_survive_legacy_replay_and_retry(self):
+        f = self.f
+        f.npm_project()
+        self.pending_path = os.fsdecode(b".changenote/new[\xff]\n*.md")
+        release = self.release(no_lockfiles=True)
+        pending = (f.repo / self.pending_path).read_bytes()
+        for attempt in range(2):
+            _, preview = f.action("preview")
+            self.assertEqual(preview["ready"], "true")
+            self.assertEqual(preview["release-commit"], release)
+            _, published = f.action("publish")
+            self.assertEqual(published["published"], "true" if attempt == 0 else "false")
+            self.assertEqual(published["release-commit"], release)
+            self.assertEqual((f.repo / self.pending_path).read_bytes(), pending)
+            self.assertEqual(f.git("status", "--porcelain"), "")
+        self.assertEqual(len(f.state()["releases"]), 1)
+        self.assertNotIn("A later change", f.state()["releases"][0]["body"])
+        self.assertEqual(json.loads(f.cli("status"))[0]["notes"], ["A later change"])
+        self.assertEqual(json.loads((f.repo / "package-lock.json").read_text())["version"], "1.0.0")
 
     def test_fixed_group_uses_only_consumed_notes(self):
         f = self.f

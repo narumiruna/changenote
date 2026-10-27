@@ -164,7 +164,7 @@ class ConfigPolicies(unittest.TestCase):
         self.assertEqual(published["published"], "true")
 
     @unittest.skipUnless(os.name == "posix", "non-UTF-8 POSIX note paths")
-    def test_release_pr_without_linked_groups_retains_non_utf8_note_support(self):
+    def test_non_utf8_notes_support_release_pr_publication_and_retry(self):
         f = self.f
         f.note()
         target = f.repo / os.fsdecode(b".changenote/note-\xff.md")
@@ -173,6 +173,25 @@ class ConfigPolicies(unittest.TestCase):
         f.git("push", "origin", "main")
         _, outputs = f.action()
         self.assertEqual(outputs["pr-operation"], "created")
+        f.git("fetch", "origin", test_actions.BRANCH)
+        f.git("merge", "--squash", "FETCH_HEAD")
+        release = f.commit("merge release with non-UTF-8 note")
+        f.git("push", "origin", "main")
+        self.assertFalse(target.exists())
+        for attempt in range(2):
+            _, preview = f.action("preview")
+            self.assertEqual(preview["ready"], "true")
+            self.assertEqual(preview["release-commit"], release)
+            _, published = f.action("publish")
+            self.assertEqual(published["published"], "true" if attempt == 0 else "false")
+            self.assertEqual(published["release-commit"], release)
+            if attempt == 0:
+                f.later_commit()
+        self.assertEqual(len(f.state()["releases"]), 1)
+        self.assertEqual(f.state()["releases"][0]["body"], "### Patch Changes\n\n- Fix behavior\n")
+        self.assertEqual(
+            f.git("ls-remote", "origin", "refs/tags/v1.0.1^{}").split()[0], release
+        )
 
     def test_base_branch_does_not_retarget_release_or_explicit_check(self):
         f = self.f
