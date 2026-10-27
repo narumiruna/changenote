@@ -66,6 +66,270 @@ fn project() -> TempDir {
     git(root, &["branch", "base"]);
     dir
 }
+fn setting(root: &Path, key: &str, value: serde_json::Value) {
+    let path = root.join(".changenote/config.json");
+    let mut config: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    config[key] = value;
+    fs::write(path, serde_json::to_string(&config).unwrap()).unwrap();
+}
+
+#[test]
+fn configured_ref_fallback_and_override_are_read_only() {
+    let dir = project();
+    let root = dir.path();
+    assert_eq!(cli(root, &["check"]).status.code(), Some(2));
+    assert!(cli(root, &["check", "--since", "HEAD"]).status.success());
+    setting(root, "base_branch", "base".into());
+    commit(root);
+    assert!(cli(root, &["check"]).status.success());
+    setting(root, "base_branch", "unavailable".into());
+    commit(root);
+    assert!(cli(root, &["check", "--since", "HEAD"]).status.success());
+    assert!(!cli(root, &["check"]).status.success());
+    git(root, &["update-ref", "refs/remotes/origin/base", "base"]);
+    setting(root, "base_branch", "refs/remotes/origin/base".into());
+    commit(root);
+    assert!(cli(root, &["check"]).status.success());
+    assert_eq!(
+        changenote::configured_base_branch(root).unwrap().as_deref(),
+        Some("refs/remotes/origin/base")
+    );
+}
+
+#[test]
+fn configured_ref_rejects_invalid_values_even_with_override() {
+    for value in [
+        serde_json::Value::Null,
+        true.into(),
+        3.into(),
+        "".into(),
+        " ".into(),
+        " base".into(),
+        "base ".into(),
+        "base\n".into(),
+        "base\0x".into(),
+        serde_json::json!([]),
+    ] {
+        let dir = project();
+        setting(dir.path(), "base_branch", value);
+        commit(dir.path());
+        assert!(changenote::configured_base_branch(dir.path()).is_err());
+        assert!(
+            !cli(dir.path(), &["check", "--since", "HEAD"])
+                .status
+                .success()
+        );
+    }
+}
+
+#[test]
+fn file_patterns_filter_coverage_but_not_notes_or_validation() {
+    let dir = project();
+    let root = dir.path();
+    setting(
+        root,
+        "changed_file_patterns",
+        serde_json::json!(["**", "!docs/**", "!tests/**"]),
+    );
+    commit(root);
+    git(root, &["branch", "-f", "base", "HEAD"]);
+    write(root, "packages/pkg/docs/a.md", "Docs");
+    write(root, "packages/pkg/nested/tests/a.rs", "Tests");
+    commit(root);
+    let report = check_with_coverage(root, "base", false, None, Coverage::Package).unwrap();
+    assert!(report.report.passed);
+    assert!(report.report.changed_packages.is_empty());
+    assert!(report.report.outside_paths.is_empty());
+    write(root, "packages/pkg/src/main.rs", "Source");
+    commit(root);
+    let report = check_with_coverage(root, "base", false, None, Coverage::Package).unwrap();
+    assert!(!report.report.passed);
+    assert_eq!(report.uncovered_packages, ["pkg"]);
+    add(root, "new", vec!["pkg".into()], Bump::Patch, "Source note").unwrap();
+    commit(root);
+    assert!(
+        check_with_coverage(root, "base", false, None, Coverage::Package)
+            .unwrap()
+            .report
+            .passed
+    );
+    // Excluding every path must not bypass invalid versions or old notes.
+    setting(
+        root,
+        "changed_file_patterns",
+        serde_json::json!(["never/**"]),
+    );
+    write(root, "packages/pkg/nested/VERSION", "invalid");
+    commit(root);
+    assert!(check(root, "base", true, Some("Docs")).is_err());
+}
+
+#[test]
+fn file_patterns_do_not_reassign_nested_paths_and_check_both_rename_sides() {
+    let dir = project();
+    let root = dir.path();
+    setting(
+        root,
+        "changed_file_patterns",
+        serde_json::json!(["old.txt"]),
+    );
+    commit(root);
+    git(root, &["branch", "-f", "base", "HEAD"]);
+    write(root, "packages/pkg/nested/src/new.rs", "excluded");
+    commit(root);
+    assert!(
+        check(root, "base", false, None)
+            .unwrap()
+            .changed_packages
+            .is_empty()
+    );
+    fs::create_dir_all(root.join("packages/pkg/nested/docs")).unwrap();
+    fs::rename(
+        root.join("packages/pkg/old.txt"),
+        root.join("packages/pkg/nested/docs/moved.txt"),
+    )
+    .unwrap();
+    commit(root);
+    assert_eq!(
+        check(root, "base", false, None).unwrap().changed_packages,
+        ["pkg"]
+    );
+    fs::remove_file(root.join("packages/pkg/nested/old.txt")).unwrap();
+    commit(root);
+    assert_eq!(
+        check(root, "base", false, None).unwrap().changed_packages,
+        ["nested", "pkg"]
+    );
+}
+
+#[test]
+fn root_patterns_exclude_note_paths_without_hiding_changed_notes() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-qb", "main"]);
+    changenote::init(root, "pkg", semver::Version::new(1, 0, 0)).unwrap();
+    setting(root, "changed_file_patterns", serde_json::json!(["src/**"]));
+    commit(root);
+    git(root, &["branch", "base"]);
+    write(root, "src/main.rs", "Source");
+    add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
+    commit(root);
+    let report = check_with_coverage(root, "base", false, None, Coverage::Package).unwrap();
+    assert!(report.report.passed);
+    assert_eq!(
+        report.report.note_paths,
+        [PathBuf::from(".changenote/fix.md")]
+    );
+    assert_eq!(changenote::status(root).unwrap().len(), 1);
+    for value in [
+        serde_json::Value::Null,
+        serde_json::json!([]),
+        serde_json::json!(["!src/**"]),
+        true.into(),
+    ] {
+        setting(root, "changed_file_patterns", value);
+        commit(root);
+        assert!(check(root, "base", true, Some("Docs")).is_err());
+    }
+}
+
+#[test]
+fn linked_membership_does_not_cover_a_changed_package() {
+    let dir = project();
+    let root = dir.path();
+    setting(root, "linked", serde_json::json!([["pkg", "nested"]]));
+    commit(root);
+    git(root, &["branch", "-f", "base", "HEAD"]);
+    write(root, "packages/pkg/new.rs", "Source");
+    write(root, "packages/pkg/nested/new.rs", "Source");
+    add(root, "one", vec!["pkg".into()], Bump::Minor, "Fix").unwrap();
+    commit(root);
+    let report = check_with_coverage(root, "base", false, None, Coverage::Package).unwrap();
+    assert_eq!(report.uncovered_packages, ["nested"]);
+}
+
+#[test]
+fn paused_packages_still_require_direct_changed_notes() {
+    let dir = project();
+    let root = dir.path();
+    setting(root, "ignore", serde_json::json!(["pkg"]));
+    commit(root);
+    git(root, &["branch", "-f", "base", "HEAD"]);
+    write(root, "packages/pkg/new.rs", "Source");
+    commit(root);
+    let report = check_with_coverage(root, "base", false, None, Coverage::Package).unwrap();
+    assert_eq!(report.uncovered_packages, ["pkg"]);
+    add(
+        root,
+        "paused-new",
+        vec!["pkg".into()],
+        Bump::Minor,
+        "Paused change",
+    )
+    .unwrap();
+    commit(root);
+    assert!(
+        check_with_coverage(root, "base", false, None, Coverage::Package)
+            .unwrap()
+            .report
+            .passed
+    );
+    assert!(changenote::status(root).unwrap().is_empty());
+}
+
+#[test]
+fn filtering_all_paths_does_not_bypass_validation_or_exemptions() {
+    for failure in ["note", "version", "dirty", "history", "config"] {
+        let dir = project();
+        let root = dir.path();
+        setting(
+            root,
+            "changed_file_patterns",
+            serde_json::json!(["never/**"]),
+        );
+        commit(root);
+        git(root, &["branch", "-f", "base", "HEAD"]);
+        match failure {
+            "note" => write(
+                root,
+                ".changenote/bad.md",
+                "---\nmissing: patch\n---\n\nBad\n",
+            ),
+            "version" => write(root, "packages/pkg/VERSION", "not a version"),
+            "dirty" => write(root, "untracked.txt", "Dirty"),
+            "config" => setting(root, "changed_file_patterns", serde_json::json!([])),
+            "history" => {
+                git(root, &["checkout", "--orphan", "unrelated"]);
+                write(root, "outside.txt", "New root");
+            }
+            _ => unreachable!(),
+        }
+        if failure != "dirty" {
+            commit(root);
+        }
+        for coverage in ["pr", "package"] {
+            let output = cli(
+                root,
+                &[
+                    "check",
+                    "--since",
+                    "base",
+                    "--coverage",
+                    coverage,
+                    "--skip-release",
+                    "--reason",
+                    "Docs",
+                ],
+            );
+            assert!(!output.status.success(), "{failure}: {coverage}");
+            assert!(
+                output.stdout.is_empty(),
+                "{failure}: validation is not a coverage report"
+            );
+        }
+    }
+}
+
 fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn walk(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
         for item in fs::read_dir(dir).unwrap() {

@@ -1,16 +1,20 @@
 mod changelog;
 mod sections;
+mod template;
 pub use sections::NoteSection;
 mod generated;
+mod patterns;
 mod planning;
 pub use generated::{add_generated, add_generated_with_type};
 mod check;
 pub use planning::{
-    DetailedRelease, FixedGroup, SectionedRelease, status_with_note_paths,
-    status_with_note_sections,
+    DetailedRelease, FixedGroup, GroupedRelease, LinkedGroup, SectionedRelease,
+    status_with_group_causes, status_with_note_paths, status_with_note_sections,
 };
 mod json_value;
-pub use check::{CheckReport, Coverage, CoverageReport, check, check_with_coverage};
+pub use check::{
+    CheckReport, Coverage, CoverageReport, check, check_with_coverage, configured_base_branch,
+};
 mod doctor;
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor};
 mod lockfile;
@@ -21,7 +25,7 @@ use anyhow::{Context, Result, ensure};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::Write,
     path::{Component, Path, PathBuf},
@@ -97,8 +101,13 @@ impl From<&Release> for SavedRelease {
 
 /// Read one package's exact changelog version body without changing files.
 pub fn release_notes(root: &Path, package: &str, version: &Version) -> Result<String> {
-    let config = load_config(root)?;
+    let config = load_release_config(root)?;
+    ensure!(
+        sections::enabled(config.changelog.as_ref()),
+        "GitHub release notes are unavailable because changelog output is disabled"
+    );
     let pkg = config
+        .config
         .packages
         .get(package)
         .context("unknown release package")?;
@@ -159,8 +168,16 @@ struct ConfigFile {
     #[serde(rename = "$schema")]
     schema: Option<String>,
     packages: BTreeMap<String, PackageFile>,
+    #[serde(default, deserialize_with = "deserialize_optional_string")]
+    base_branch: Option<String>,
+    #[serde(default)]
+    changed_file_patterns: patterns::FilePatterns,
     #[serde(default)]
     fixed: Vec<Vec<String>>,
+    #[serde(default)]
+    linked: Vec<Vec<String>>,
+    #[serde(default)]
+    ignore: Vec<String>,
     changelog: Option<sections::ChangelogConfig>,
 }
 
@@ -171,14 +188,20 @@ struct PackageFile {
     version_file: PathBuf,
     #[serde(default)]
     version_outputs: Vec<PathBuf>,
-    #[serde(default, deserialize_with = "deserialize_tag_prefix")]
+    #[serde(default, deserialize_with = "deserialize_optional_string")]
     tag_prefix: Option<String>,
 }
 
-fn deserialize_tag_prefix<'de, D: serde::Deserializer<'de>>(
+fn deserialize_optional_string<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<Option<String>, D::Error> {
     String::deserialize(deserializer).map(Some)
+}
+
+fn deserialize_optional_value<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
 }
 
 struct PackageOptions {
@@ -188,7 +211,11 @@ struct PackageOptions {
 
 pub(crate) struct ReleaseConfig {
     config: Config,
+    base_branch: Option<String>,
+    changed_file_patterns: patterns::FilePatterns,
     fixed: Vec<Vec<String>>,
+    linked: Vec<Vec<String>>,
+    ignore: BTreeSet<String>,
     changelog: Option<sections::ChangelogConfig>,
     package_options: BTreeMap<String, PackageOptions>,
 }
@@ -206,7 +233,7 @@ impl std::ops::Deref for NoteData {
 }
 
 /// Validate all configuration and return only the primary package settings.
-/// Fixed groups, sections, additional outputs, and tag prefixes are not retained in this view.
+/// Extended settings, including the check base ref, are not retained in this view.
 pub fn load_config(root: &Path) -> Result<Config> {
     Ok(load_release_config(root)?.config)
 }
@@ -216,6 +243,14 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
     let file: ConfigFile = serde_json::from_str(&fs::read_to_string(path)?)?;
     if let Some(changelog) = &file.changelog {
         changelog.validate()?;
+    }
+    if let Some(reference) = &file.base_branch {
+        ensure!(
+            !reference.is_empty()
+                && reference.trim() == reference
+                && !reference.chars().any(char::is_control),
+            "base_branch must be nonempty, trimmed, and contain no control characters"
+        );
     }
     let mut packages = BTreeMap::new();
     let mut package_options = BTreeMap::new();
@@ -239,8 +274,34 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
         schema: file.schema,
         packages,
     };
+    let fixed = patterns::expand_fixed(
+        &file.fixed,
+        &config
+            .packages
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+    )?;
+    let mut ignore = BTreeSet::new();
+    for name in file.ignore {
+        ensure!(
+            config.packages.contains_key(&name),
+            "unknown ignored package {name}"
+        );
+        ensure!(
+            ignore.insert(name.clone()),
+            "duplicate ignored package {name}"
+        );
+    }
+    for group in &fixed {
+        let paused = group.iter().filter(|name| ignore.contains(*name)).count();
+        ensure!(
+            paused == 0 || paused == group.len(),
+            "ignore cannot pause part of a fixed group"
+        );
+    }
     let mut members = std::collections::BTreeSet::new();
-    for group in &file.fixed {
+    for group in &fixed {
         ensure!(
             group.len() >= 2,
             "fixed groups require at least two packages"
@@ -256,10 +317,27 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
             );
         }
     }
+    for group in &file.linked {
+        ensure!(
+            group.len() >= 2,
+            "linked groups require at least two packages"
+        );
+        for name in group {
+            ensure!(
+                config.packages.contains_key(name),
+                "unknown linked package {name}"
+            );
+            ensure!(
+                members.insert(name),
+                "duplicate linked or fixed membership: {name}"
+            );
+        }
+    }
     ensure!(
         !config.packages.is_empty(),
         "config must contain at least one package"
     );
+    let write_changelogs = sections::enabled(file.changelog.as_ref());
     let mut files = std::collections::BTreeSet::new();
     for (name, pkg) in &config.packages {
         safe_name(name)?;
@@ -287,21 +365,23 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
             files.insert(file.canonicalize()?),
             "packages cannot share a version file"
         );
-        let changelog = checked_path(root, &pkg.path.join("CHANGELOG.md"))?;
-        let changelog_target = if changelog.exists() {
-            ensure!(changelog.is_file(), "changelog must be a file");
-            changelog.canonicalize()?
-        } else {
-            changelog
-                .parent()
-                .context("missing parent")?
-                .canonicalize()?
-                .join("CHANGELOG.md")
-        };
-        ensure!(
-            files.insert(changelog_target),
-            "package output paths must not overlap"
-        );
+        if write_changelogs {
+            let changelog = checked_path(root, &pkg.path.join("CHANGELOG.md"))?;
+            let changelog_target = if changelog.exists() {
+                ensure!(changelog.is_file(), "changelog must be a file");
+                changelog.canonicalize()?
+            } else {
+                changelog
+                    .parent()
+                    .context("missing parent")?
+                    .canonicalize()?
+                    .join("CHANGELOG.md")
+            };
+            ensure!(
+                files.insert(changelog_target),
+                "package output paths must not overlap"
+            );
+        }
         let version = read_version(&file)?;
         let options = &package_options[name];
         if let Some(prefix) = &options.tag_prefix {
@@ -334,7 +414,11 @@ fn load_release_config(root: &Path) -> Result<ReleaseConfig> {
     }
     Ok(ReleaseConfig {
         config,
-        fixed: file.fixed,
+        base_branch: file.base_branch,
+        changed_file_patterns: file.changed_file_patterns,
+        fixed,
+        linked: file.linked,
+        ignore,
         changelog: file.changelog,
         package_options,
     })
@@ -500,9 +584,22 @@ fn notes(root: &Path, config: &ReleaseConfig) -> Result<Vec<(PathBuf, NoteData)>
                 path.display()
             );
         }
+        validate_note_pause(config, &note.packages)?;
         result.push((path, note));
     }
     Ok(result)
+}
+
+fn validate_note_pause(config: &ReleaseConfig, packages: &BTreeMap<String, Bump>) -> Result<()> {
+    let paused = packages
+        .keys()
+        .filter(|name| config.ignore.contains(*name))
+        .count();
+    ensure!(
+        paused == 0 || paused == packages.len(),
+        "a note cannot mix ignored and active packages"
+    );
+    Ok(())
 }
 
 fn plan(
@@ -512,7 +609,7 @@ fn plan(
 ) -> Result<Vec<Release>> {
     Ok(planning::plan(root, config, notes)?
         .into_iter()
-        .map(|r| r.detail.release)
+        .map(|r| r.sectioned.detail.release)
         .collect())
 }
 
@@ -716,7 +813,7 @@ fn note_content(
             changelog.validate_type(kind)?;
         }
     }
-    let config = release_config.config;
+    let config = &release_config.config;
     let mut changes = BTreeMap::new();
     for (pkg, bump) in packages {
         ensure!(config.packages.contains_key(&pkg), "unknown package {pkg}");
@@ -724,6 +821,7 @@ fn note_content(
             ensure!(previous == bump, "conflicting bumps for package {pkg}");
         }
     }
+    validate_note_pause(&release_config, &changes)?;
     let mut metadata = serde_yaml::to_value(&changes)?;
     if let Some(kind) = kind {
         metadata.as_mapping_mut().unwrap().insert(
@@ -771,6 +869,12 @@ pub fn version_with_output(
     if releases.is_empty() {
         return Ok(releases);
     }
+    let released: BTreeSet<_> = releases.iter().map(|release| &release.package).collect();
+    let consumed: Vec<_> = notes
+        .iter()
+        .filter(|(_, note)| note.packages.keys().any(|name| released.contains(name)))
+        .map(|(path, _)| path.clone())
+        .collect();
     // Prepare every output before changing any input.
     let version_paths = release_version_paths(root, &release_config, &releases)?;
     let locks = if sync_lockfiles {
@@ -783,16 +887,18 @@ pub fn version_with_output(
     for detail in &details {
         let release = &detail.detail.release;
         let pkg = &config.packages[&release.package];
-        let path = checked_path(root, &pkg.path.join("CHANGELOG.md"))?;
-        let old = if path.exists() {
-            fs::read_to_string(&path)?
-        } else {
-            String::new()
-        };
-        writes.push((
-            path,
-            changelog::render_sections(release, &old, legacy, &detail.note_sections),
-        ));
+        if sections::enabled(release_config.changelog.as_ref()) {
+            let path = checked_path(root, &pkg.path.join("CHANGELOG.md"))?;
+            let old = if path.exists() {
+                fs::read_to_string(&path)?
+            } else {
+                String::new()
+            };
+            writes.push((
+                path,
+                changelog::render_sections(release, &old, legacy, &detail.note_sections),
+            ));
+        }
         for version_path in
             release_version_paths(root, &release_config, std::slice::from_ref(release))?
         {
@@ -820,7 +926,7 @@ pub fn version_with_output(
         for (path, content) in writes {
             fs::write(path, content)?;
         }
-        for (path, _) in notes {
+        for path in consumed {
             fs::remove_file(path)?;
         }
         Ok(())

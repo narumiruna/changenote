@@ -105,6 +105,7 @@ if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
           map("<td>" + scalar + "</td>") | join("")) + "</tr>"),
         "</table>",
         (.[] | "<h3>" + (.package | scalar) + "@" + (.version | scalar) + "</h3>",
+          (if has("linked_group") then "<p>Linked version baseline: <code>" + (.linked_group.base_version | scalar) + "</code>. Direct notes remain with their named package.</p>" else empty end),
           (if (.notes | length) == 0 then
              "<p>No direct notes. This package is released with its fixed version group.</p>"
            else . as $release | range(0; .notes | length) as $index |

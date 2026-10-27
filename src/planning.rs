@@ -41,6 +41,36 @@ pub struct FixedGroup {
     pub source_note_paths: Vec<PathBuf>,
 }
 
+/// Cause of a linked baseline adjustment; membership alone does not cause a release.
+#[derive(Debug, Clone, Serialize)]
+pub struct LinkedGroup {
+    pub members: Vec<String>,
+    pub base_version: Version,
+    #[serde(serialize_with = "serialize_paths")]
+    pub source_note_paths: Vec<PathBuf>,
+}
+
+/// Extended result that preserves the existing public sectioned result layout.
+#[derive(Debug, Serialize)]
+pub struct GroupedRelease {
+    #[serde(flatten)]
+    pub sectioned: SectionedRelease,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub linked_group: Option<LinkedGroup>,
+}
+
+impl std::ops::Deref for GroupedRelease {
+    type Target = SectionedRelease;
+    fn deref(&self) -> &Self::Target {
+        &self.sectioned
+    }
+}
+
+pub fn status_with_group_causes(root: &Path) -> Result<Vec<GroupedRelease>> {
+    let config = load_release_config(root)?;
+    plan(root, &config, &notes(root, &config)?)
+}
+
 pub fn status_with_note_paths(root: &Path) -> Result<Vec<DetailedRelease>> {
     Ok(status_with_note_sections(root)?
         .into_iter()
@@ -49,8 +79,10 @@ pub fn status_with_note_paths(root: &Path) -> Result<Vec<DetailedRelease>> {
 }
 
 pub fn status_with_note_sections(root: &Path) -> Result<Vec<SectionedRelease>> {
-    let config = load_release_config(root)?;
-    plan(root, &config, &notes(root, &config)?)
+    Ok(status_with_group_causes(root)?
+        .into_iter()
+        .map(|r| r.sectioned)
+        .collect())
 }
 
 fn bump_version(mut version: Version, bump: Bump) -> Result<Version> {
@@ -75,7 +107,7 @@ pub(crate) fn plan(
     root: &Path,
     config: &ReleaseConfig,
     notes: &[(PathBuf, NoteData)],
-) -> Result<Vec<SectionedRelease>> {
+) -> Result<Vec<GroupedRelease>> {
     let versions = config
         .config
         .packages
@@ -89,7 +121,7 @@ pub(crate) fn plan(
         .collect::<Result<BTreeMap<_, _>>>()?;
     let mut targets = BTreeMap::new();
     for (name, current) in &versions {
-        if config.fixed.iter().any(|g| g.contains(name)) {
+        if config.ignore.contains(name) || config.fixed.iter().any(|g| g.contains(name)) {
             continue;
         }
         if let Some(bump) = notes.iter().filter_map(|(_, n)| n.packages.get(name)).max() {
@@ -100,6 +132,9 @@ pub(crate) fn plan(
         }
     }
     for group in &config.fixed {
+        if config.ignore.contains(&group[0]) {
+            continue;
+        }
         let sources: Vec<_> = notes
             .iter()
             .filter(|(_, n)| group.iter().any(|p| n.packages.contains_key(p)))
@@ -123,6 +158,40 @@ pub(crate) fn plan(
         };
         for name in group {
             targets.insert(name.clone(), (bump, version.clone(), Some(cause.clone())));
+        }
+    }
+    let mut linked_causes = BTreeMap::new();
+    for group in &config.linked {
+        let active: Vec<_> = group
+            .iter()
+            .filter(|name| targets.contains_key(*name))
+            .collect();
+        let Some(bump) = active.iter().map(|name| targets[*name].0).max() else {
+            continue;
+        };
+        let base = group
+            .iter()
+            .map(|name| &versions[name])
+            .max()
+            .unwrap()
+            .clone();
+        let target = bump_version(base.clone(), bump)?;
+        let mut members = group.clone();
+        members.sort();
+        let cause = LinkedGroup {
+            members,
+            base_version: base,
+            source_note_paths: notes
+                .iter()
+                .filter(|(_, note)| active.iter().any(|name| note.packages.contains_key(*name)))
+                .map(|(path, _)| relative_note(path))
+                .collect(),
+        };
+        for name in active {
+            let entry = targets.get_mut(name).unwrap();
+            entry.0 = bump;
+            entry.1 = target.clone();
+            linked_causes.insert(name.clone(), cause.clone());
         }
     }
     let mut tags = std::collections::BTreeSet::new();
@@ -150,13 +219,17 @@ pub(crate) fn plan(
             };
             let note_sections =
                 crate::sections::group(&release, &note_types, config.changelog.as_ref());
-            Ok(SectionedRelease {
-                note_types,
-                note_sections,
-                detail: DetailedRelease {
-                    note_paths: direct.iter().map(|(p, _, _)| relative_note(p)).collect(),
-                    fixed_group,
-                    release,
+            let linked_group = linked_causes.remove(&release.package);
+            Ok(GroupedRelease {
+                linked_group,
+                sectioned: SectionedRelease {
+                    note_types,
+                    note_sections,
+                    detail: DetailedRelease {
+                        note_paths: direct.iter().map(|(p, _, _)| relative_note(p)).collect(),
+                        fixed_group,
+                        release,
+                    },
                 },
             })
         })

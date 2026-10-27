@@ -11,8 +11,25 @@
       "description": "Schema reference for editors. The CLI does not fetch or validate this reference.",
       "type": ["string", "null"]
     },
-    "fixed": {
-      "description": "Disjoint groups of at least two known packages that release at one version. Membership is also checked by the CLI.",
+    "changed_file_patterns": {
+      "description": "Package-relative check paths. Include matches minus all leading-! exclusions. Omission includes every package path.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "base_branch": {
+      "description": "Local Git comparison ref for check when --since is omitted. Does not select release Action branches.",
+      "type": "string",
+      "minLength": 1
+    },
+    "ignore": {
+      "description": "Explicit configured packages whose pending notes are retained instead of released. Fixed groups must be paused in full.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+    },
+    "linked": {
+      "description": "Disjoint explicit-name groups that share a version baseline without activating inactive members.",
       "type": "array",
       "items": {
         "type": "array",
@@ -21,12 +38,32 @@
         "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
       }
     },
+    "fixed": {
+      "description": "Groups of names or * and ? patterns. Each must resolve to at least two distinct disjoint packages; checked by the CLI.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": { "type": "string", "pattern": "^[A-Za-z0-9_*?-]+$" }
+      }
+    },
     "changelog": {
-      "description": "Optional ordered sections. Without this setting, notes are grouped by SemVer bump.",
+      "description": "Optional changelog output controls, ordered sections, and bounded note rendering. Omission retains the existing output.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["sections"],
       "properties": {
+        "enabled": {
+          "description": "Write package changelogs. When false, local version and tag remain supported but GitHub publication is unsupported.",
+          "type": "boolean",
+          "default": true
+        },
+        "note_template": {
+          "description": "{summary}, or one metadata line followed by a blank line and {summary}. Metadata supports {package}, {version}, and {bump}; the CLI validates placeholders.",
+          "type": "string",
+          "minLength": 1,
+          "default": "{summary}"
+        },
         "sections": {
           "type": "array",
           "minItems": 1,

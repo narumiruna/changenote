@@ -47,7 +47,7 @@ git push origin refs/tags/v0.1.0
 
 `version` takes the highest requested bump for each package and applies it once. Multiple patch notes cause one patch bump, not multiple bumps. Major, minor, and patch follow stable SemVer rules, including versions below 1.0.0.
 
-The command updates each configured version file, adds entries to `CHANGELOG.md`, saves the latest release batch to `.changenote/releases.json`, and removes consumed notes. Saved batches contain only `package`, `old_version`, `version`, `bump`, and `tag`; summaries remain in the package changelogs, not in saved `notes` fields. Pending `status` and `version` command output still include notes. New entries follow the existing title and introduction, before the first ATX SemVer version heading outside fenced or indented code. A file without a version heading is treated as an introduction. Prior content is not reformatted. By default, notes are grouped by their own bump under `Major Changes`, `Minor Changes`, and `Patch Changes`, in that order; empty groups are omitted. Multiline Markdown remains inside each note's list item. A run without pending notes does not change files or clear the saved batch.
+The command updates each configured version file, saves the latest release batch to `.changenote/releases.json`, and removes consumed notes. It also adds entries to `CHANGELOG.md` unless changelog output is disabled. Saved batches contain only `package`, `old_version`, `version`, `bump`, and `tag`; with default output, summaries remain in the package changelogs, not in saved `notes` fields. Pending `status` and `version` command output still include notes. New entries follow the existing title and introduction, before the first ATX SemVer version heading outside fenced or indented code. A file without a version heading is treated as an introduction. Prior content is not reformatted. By default, notes are grouped by their own bump under `Major Changes`, `Minor Changes`, and `Patch Changes`, in that order; empty groups are omitted. Multiline Markdown remains inside each note's list item. A run without pending notes does not change files or clear the saved batch.
 
 ### Initialize from an existing version file
 
@@ -81,6 +81,9 @@ Create `.changenote/config.json` with explicit packages:
 ```
 
 The optional `$schema` field enables editor validation and completion with the repository's [JSON Schema](schema.json). `init` adds the GitHub raw URL shown above. Replace `main` with a commit SHA to pin the schema, or use a local schema path. The CLI accepts the field as metadata; it does not fetch the schema or use it for validation. Configurations without `$schema` remain supported. Unknown configuration fields are rejected. The CLI also checks paths, files, and versions that the schema cannot verify.
+
+Rust `load_config()` validates the entire file but returns only the primary-package settings and schema metadata.
+Serializing this view drops extended settings; do not use it to round-trip an extended configuration.
 
 Each package directory must exist and contain its version file, for example `packages/pkg-a/VERSION`:
 
@@ -276,6 +279,37 @@ Release PRs use the same planned sections as changelogs; GitHub Releases use the
 To remove this feature before versioning, remove section configuration and `$type` metadata from pending notes.
 Do not edit committed release batches.
 
+### Changelog output controls and native templates
+
+```json
+{
+  "changelog": {
+    "enabled": true,
+    "note_template": "{package}@{version} [{bump}]\n\n{summary}"
+  }
+}
+```
+
+Both fields are optional. `enabled` defaults to `true`, and `note_template` defaults to `{summary}`.
+Existing sections-only configuration remains supported; `sections` is optional when only output controls are used.
+An empty changelog object retains default bump grouping. If sections are supplied, they must still be nonempty and valid.
+
+A template is either exactly `{summary}`, or one metadata line followed by a blank line and `{summary}`.
+The metadata line must be nonempty, trimmed, contain no control characters, and not start a backtick or tilde code fence.
+Metadata supports `{package}`, `{version}` (the target version), and `{bump}` (that note's own bump).
+Unknown or unbalanced placeholders, literal braces in metadata, and null values are rejected before writes.
+The complete summary is inserted once as literal Markdown; placeholders or shell syntax inside it are not evaluated.
+Version headings, section headings, and list indentation stay under the native renderer's control.
+Rendered `note_sections` and Release PR details use the template. Raw `notes`, bumps, and paths do not change.
+Members without direct notes retain their native explanatory message. No JS module, shell hook, formatter, or network lookup is run.
+
+With `"enabled": false`, version files and saved batch metadata still update, and consumed notes are removed, but changelogs are neither created nor changed.
+An existing changelog is not a release-body fallback. Local tagging remains supported.
+GitHub preview and publication do not support batches generated with changelog output disabled; they fail before remote tag or Release writes.
+This decision uses the selected historical batch's configuration, not later live settings.
+Keep changelogs enabled if GitHub publication is required. Disabling output does not preserve consumed summaries elsewhere.
+Upgrade CLI and all Action pins together before using these controls.
+
 ## Note sources and automatic names
 
 ```sh
@@ -317,13 +351,51 @@ Add an optional top-level `fixed` field to the config:
 }
 ```
 
-Each group must contain at least two distinct known names. Groups cannot overlap; globs, unknown names, invalid types, and duplicate memberships are rejected. Absent `fixed` and `fixed: []` mean independent versions. The existing Rust `Config` struct remains a package view: `load_config()` validates fixed settings, but serializing its return value does not preserve them. Do not use that view to round-trip a config with fixed settings.
+Each group must resolve to at least two distinct known package names. Literal names and case-sensitive name patterns using `*` and `?` are supported, for example `"fixed": [["sdk-*"]]`.
+`*` matches zero or more name characters; `?` matches one. Consecutive stars are equivalent to one star, with no recursive-path meaning.
+Patterns match configured package keys, not directories or manifest names. Packages still require explicit declarations; notes and `add --package` still use actual names.
+Reject unmatched patterns, singleton expanded groups, duplicate matches within or across groups, and overlap with linked groups.
+Exclusions, classes, braces, path separators, escapes, extglobs, and regular expressions are not supported. This subset is not picomatch compatibility.
+Resolved members are sorted. Adding a configured package that matches a pattern changes future group membership; historical releases use historical configuration. Absent `fixed` and `fixed: []` mean independent versions. The existing Rust `Config` struct remains a package view: `load_config()` validates fixed settings, but serializing its return value does not preserve them. Do not use that view to round-trip a config with fixed settings.
 
 When any member has a pending note, the planner takes the highest current version in the group, applies the highest requested member bump once, and releases every member at that version. Each result keeps its actual `old_version`. For example, members at `1.0.0` and `2.4.9` with a patch note release together at `2.4.10`. The change for a lower-version member can therefore exceed the requested bump. A group without pending notes does not synchronize differing versions.
 
 Direct summaries, their bumps, and their paths stay with the named package. A propagated member has empty `notes` and direct `note_paths`. Detailed status adds `fixed_group` with sorted `members`, `base_version`, and filename-ordered `source_note_paths` for all notes that activate the group. Those sources are not direct package notes. Rust callers can use `status_with_note_paths()` without changing the existing `status()` API or public struct layouts.
 
-All member version files, changelogs, and tags are release outputs. A member without direct notes gets the text “Released with its fixed version group; no direct changes.” in its changelog, Release PR, and GitHub Release. Dependency ranges remain unchanged; supported existing lockfiles are synchronized. Upgrade CLI and Actions together before using fixed config; older CLIs reject it.
+All member version files and tags are release outputs. Changelogs are also outputs unless explicitly disabled. A member without direct notes gets the text “Released with its fixed version group; no direct changes.” in its changelog, Release PR, and GitHub Release. Dependency ranges remain unchanged; supported existing lockfiles are synchronized. Upgrade CLI and Actions together before using fixed config; older CLIs reject it.
+
+## Linked version groups
+
+Optional `linked` groups use explicit configured package names, for example `"linked": [["pkg-a", "pkg-b"]]`.
+Each group needs at least two distinct known names. Groups cannot overlap each other or fixed groups. Globs and null values are rejected.
+Omission and `[]` retain independent versions.
+
+Active members use the highest original current version in the complete group plus the highest requested active-member bump, applied once.
+Only members with release causes change. An inactive high-version member supplies a baseline but does not release.
+For A at 1.0.0 and B at 1.2.0, a patch note for A releases A at 1.2.1; B remains at 1.2.0.
+If A has a patch note and B a minor note, both release at 1.3.0.
+Actual old versions, direct summaries, note bumps, and note paths stay with each package. Linked membership does not provide direct PR coverage.
+
+`status --include-note-paths` adds `linked_group` with sorted complete members, the original `base_version`, and filename-ordered `source_note_paths`.
+Source paths explain the group baseline; they are not additional direct notes.
+Rust callers can use `status_with_group_causes()` and `GroupedRelease`.
+Existing public result layouts and API signatures remain supported; older detailed views omit linked causes.
+Default status JSON and metadata-only saved batches are unchanged.
+Upgrade CLI and Action pins together. Dependency propagation is not implemented.
+
+## Pause package releases
+
+Use optional `"ignore": ["pkg-a"]` to pause configured packages without losing pending notes.
+Only explicit known names are accepted; reject duplicate names, globs, invalid types, and null. Omission and `[]` change nothing.
+Paused-only notes remain unchanged. A note cannot mix paused and active packages; `add` and planning reject that combination.
+Pause every member of a fixed group or none. A paused linked member stays unchanged but still supplies its original version to the group baseline.
+
+All configuration, notes, and current versions remain validated. PR checks still require direct notes for paused packages.
+A plan with only paused notes changes no files and preserves the saved batch.
+An active release consumes only its selected notes and updates only its selected outputs. A shared lockfile can change for another active package.
+Ignore affects pending planning only; it never suppresses publication of an already saved historical batch.
+There is no dependency graph, so this setting cannot verify whether an active package depends on a paused package. Review that relationship separately.
+Upgrade CLI and Action pins together before using ignore.
 
 ## Check PR notes
 
@@ -333,9 +405,17 @@ changenote check --since origin/main --coverage package
 changenote check --since origin/main --skip-release --reason "Documentation only"
 ```
 
+Set optional `base_branch` in `.changenote/config.json` to select a default comparison ref, for example `"base_branch": "origin/main"`.
+An explicit `--since` takes priority. If neither is present, the CLI reports a missing argument.
+The selected ref must exist locally; the CLI does not fetch, guess a branch, or change refs.
+An unused configured ref need not exist, but its configuration value must still be valid.
+This setting does not select the Release PR or publication target; Action inputs remain authoritative.
+Rust callers can use `configured_base_branch()`; existing explicit-ref check APIs remain supported.
+`load_config()` validates this setting but does not retain it in the primary-package view.
+
 `check` requires the Git repository root, a clean working tree, full enough history to find a merge base, and an available base ref. It compares tracked paths between `git merge-base <ref> HEAD` and `HEAD`; it does not include uncommitted or untracked changes. File renames report both old and new paths. Nested packages use the deepest matching configured directory. Files outside all configured packages are reported but do not imply a package release.
 
-If packages changed, at least one valid top-level note must be added, modified, or renamed in that comparison and remain in `HEAD`. Unchanged old notes and deleted notes do not satisfy the check. The default `--coverage pr` is a **PR-level check, not proof of per-package note coverage**. No file patterns are excluded automatically. Use the explicit exemption for documentation-only or test-only changes inside package directories. `--skip-release` requires a non-empty `--reason`; it never bypasses config, version, note, or Git validation.
+If packages changed, at least one valid top-level note must be added, modified, or renamed in that comparison and remain in `HEAD`. Unchanged old notes and deleted notes do not satisfy the check. The default `--coverage pr` is a **PR-level check, not proof of per-package note coverage**. No file patterns are excluded automatically. Optional `changed_file_patterns` can limit which package-relative paths require notes (see below). Use the explicit exemption for documentation-only or test-only changes inside package directories. `--skip-release` requires a non-empty `--reason`; it never bypasses config, version, note, or Git validation.
 
 Use `--coverage package` to require a direct package assignment in a changed note for every changed package.
 A note for another package, an unchanged old note, or fixed-group propagation does not cover that package.
@@ -368,6 +448,29 @@ steps:
 Use this job for `pull_request` events. Checkout must contain `refs/remotes/origin/<base branch>` and a clean tree. Branch names enter the shell through an environment variable, not inline expression substitution.
 
 For tested, isolated fixtures, see [changenote-example](https://github.com/narumiruna/changenote-example). Use its pinned CLI revision; released binaries can have different features.
+
+### File patterns for note checks
+
+```json
+{
+  "changed_file_patterns": ["**", "!docs/**", "!tests/**"]
+}
+```
+
+Omission includes all tracked package files. A supplied list must be nonempty and have an inclusion pattern.
+Match a complete package-relative path, with forward slashes and case-sensitive matching.
+An inclusion must match and no exclusion may match; a leading `!` marks an exclusion. List order cannot re-include a path.
+`*` and `?` do not cross path separators. A complete `**` component matches zero or more directories; trailing `**` also matches descendant files.
+Bracket classes and brace alternatives are supported. Wildcards match leading dots.
+Reject malformed patterns, absolute or drive paths, backslashes, empty/current/parent components, and partial `**` components.
+This is not Git ignore syntax. There are no implicit file exclusions.
+
+The deepest package owns each path before filtering. An excluded nested path never falls back to a parent package.
+Renames check old and new paths separately; deletions use the old path.
+Filtered in-package paths are not reported as outside paths.
+Patterns affect both coverage modes, but never filter pending releases or hide configuration, version, note, or Git errors.
+Changed notes are discovered independently, even when the note path does not match.
+Upgrade CLI and check Action pins together before using this setting.
 
 ## Local diagnostics
 
@@ -601,7 +704,7 @@ Before production use, verify repository permissions, branch rules, and App-toke
 - Only top-level `.changenote/*.md` files are read. Hidden files and `README.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` are ignored.
 - `tag` requires a clean Git working tree and committed release data. It creates local tags only; it does not push, publish artifacts, or run arbitrary commands.
 - Input validation and output preparation happen before version writes. Ordinary failures trigger best-effort recovery of known release files. Failed recovery or process termination can leave partial changes. Run in a clean checkout, inspect changes, and use Git to restore files before retrying. Do not run concurrent local version commands.
-- Dependency propagation, registry publication, prereleases, and linked version groups are not implemented.
+- Dependency propagation, registry publication, and prereleases are not implemented.
 
 ## Development
 

@@ -89,7 +89,7 @@ stage_release() {
   while IFS= read -r -d '' path; do
     paths+=("$path")
   done < <(jq -j --slurpfile config .changenote/config.json \
-    '.[] | $config[0].packages[.package] | .path + "/CHANGELOG.md\u0000"' "$plan")
+    '.[] | select($config[0].changelog.enabled != false) | $config[0].packages[.package] | .path + "/CHANGELOG.md\u0000"' "$plan")
   while IFS= read -r -d '' path; do
     if [[ $path == .changenote/*.md && ${path#.changenote/} != */* ]]; then paths+=("$path"); fi
   done < <(git diff --diff-filter=D --name-only -z)
