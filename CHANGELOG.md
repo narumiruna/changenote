@@ -1,3 +1,19 @@
+## 0.8.0
+
+### Minor Changes
+
+- Select package-relative files that require PR notes with changed_file_patterns, without filtering pending releases.
+
+- Configure a default local comparison ref with base_branch while retaining explicit --since overrides.
+
+- Select fixed version group members with validated name patterns while preserving historical release membership.
+
+- Plan linked version groups from a shared baseline while releasing only active members and preserving direct note ownership.
+
+- Control changelog output and render notes with bounded data-only templates; reject GitHub publication of changelog-disabled batches before remote writes.
+
+- Pause selected package releases with ignore, retain their notes, and recover all known notes safely on write failures.
+
 ## 0.7.1
 
 ### Patch Changes
