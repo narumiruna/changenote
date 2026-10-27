@@ -6,16 +6,18 @@ source "${BASH_SOURCE[0]%/*}/common.sh"
 select_publication_notes() {
   local path
   local -A consumed=()
-  "$cli" status --include-note-paths > "$temp/parent-plan.json"
+  # Validate all parent notes before temporarily hiding retained Markdown files.
+  "$cli" status > /dev/null
   git diff --no-renames --diff-filter=D --name-only -z "$parent" "$release" -- .changenote > "$temp/deleted-paths"
   while IFS= read -r -d '' path; do consumed[$path]=1; done < "$temp/deleted-paths"
-  jq -j '[.[].note_paths[]] | unique[] + "\u0000"' "$temp/parent-plan.json" > "$temp/parent-note-paths"
+  # Git paths preserve filename bytes that cannot be represented in JSON.
+  git ls-files -z -- .changenote > "$temp/parent-paths"
   : > "$temp/pending-note-paths"
   while IFS= read -r -d '' path; do
-    if [[ -z ${consumed[$path]+present} ]]; then
+    if [[ $path == .changenote/*.md && ${path#.changenote/} != */* && -z ${consumed[$path]+present} ]]; then
       printf '%s\0' "$path" >> "$temp/pending-note-paths"
     fi
-  done < "$temp/parent-note-paths"
+  done < "$temp/parent-paths"
 }
 
 hide_pending_notes() {

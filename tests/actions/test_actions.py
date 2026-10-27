@@ -222,6 +222,40 @@ class Actions(unittest.TestCase):
         self.assertEqual(outputs["pr-operation"], "closed")
         self.assertTrue(self.git("ls-remote", "origin", "refs/heads/" + BRANCH))
 
+    def test_noop_refreshes_release_branch_after_note_rename(self):
+        self.note()
+        self.action()
+        previous = self.git("ls-remote", "origin", "refs/heads/" + BRANCH).split()[0]
+        self.git("mv", ".changenote/fix.md", ".changenote/renamed.md")
+        base = self.commit("rename pending note")
+        self.git("push", "origin", "main")
+        _, outputs = self.action()
+        self.assertEqual(outputs["pr-operation"], "updated")
+        self.assertEqual(outputs["pr-number"], "1")
+        self.assertEqual(len(self.state()["pulls"]), 1)
+        self.git("fetch", "origin", BRANCH)
+        head = self.git("rev-parse", "FETCH_HEAD")
+        self.assertNotEqual(head, previous)
+        self.assertEqual(self.git("rev-parse", head + "^"), base)
+        self.assertEqual(
+            self.git("rev-parse", head + "^{tree}"),
+            self.git("rev-parse", previous + "^{tree}"),
+        )
+        self.action()
+        self.assertEqual(
+            self.git("ls-remote", "origin", "refs/heads/" + BRANCH).split()[0], head
+        )
+        self.git("merge", "--squash", head)
+        release = self.commit("merge refreshed release")
+        self.git("push", "origin", "main")
+        self.assertFalse((self.repo / ".changenote/renamed.md").exists())
+        _, preview = self.action("preview")
+        self.assertEqual(preview["ready"], "true")
+        self.assertEqual(preview["release-commit"], release)
+        _, published = self.action("publish")
+        self.assertEqual(published["published"], "true")
+        self.assertEqual(published["release-commit"], release)
+
     def test_pr_body_groups_each_note_by_bump(self):
         (self.repo / "other").mkdir()
         (self.repo / "other/VERSION").write_text("2.0.0\n")
