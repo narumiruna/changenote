@@ -1,9 +1,9 @@
 [
   {
     "package": "changenote",
-    "old_version": "0.7.0",
-    "version": "0.7.1",
-    "bump": "patch",
-    "tag": "v0.7.1"
+    "old_version": "0.7.1",
+    "version": "0.8.0",
+    "bump": "minor",
+    "tag": "v0.8.0"
   }
 ]
