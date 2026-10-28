@@ -32,7 +32,7 @@ restore_pending_notes() {
   fi
 }
 
-verify_publication_batch() {
+find_publication_batch() {
   # Explicit first-parent diffs also select merge commits whose tree matches the PR head.
   release=''
   while IFS= read -r commit; do
@@ -52,6 +52,11 @@ verify_publication_batch() {
   git show "$release:.changenote/releases.json" > "$temp/batch.json" || fail 'Release batch was removed; inspect history manually.'
   jq -e 'type == "array" and length > 0' "$temp/batch.json" >/dev/null || fail 'Invalid or empty release batch.'
   parent=$(git rev-parse "$release^")
+}
+
+verify_publication_batch() {
+  find_publication_batch
+  [[ -n $release ]] || return 0
   checkout_work "$parent"
   # Replay only consumed notes. Newer notes may have reached the base branch
   # before the Release PR merged; restore them before comparing the complete tree.

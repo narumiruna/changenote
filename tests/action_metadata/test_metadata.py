@@ -30,12 +30,12 @@ class Metadata(unittest.TestCase):
             (
                 ROOT / "publish/action.yml",
                 "publish",
-                {"release-commit", "published", "published-packages"},
+                {"release-commit", "releases", "published", "published-packages"},
             ),
             (
                 ROOT / "preview/action.yml",
                 "preview",
-                {"release-commit", "ready", "publication-plan"},
+                {"release-commit", "releases", "ready", "publication-plan"},
             ),
         ):
             metadata = read_yaml(action)
@@ -45,6 +45,14 @@ class Metadata(unittest.TestCase):
                 metadata["inputs"]["github-token"]["default"], "${{ github.token }}"
             )
             self.assertEqual(metadata["inputs"]["base-branch"]["default"], "")
+            if step == "publish":
+                self.assertEqual(metadata["inputs"]["expected-release-commit"]["default"], "")
+                self.assertEqual(
+                    metadata["runs"]["steps"][0]["env"]["INPUT_EXPECTED_RELEASE_COMMIT"],
+                    "${{ inputs.expected-release-commit }}",
+                )
+                self.assertNotIn("${{", metadata["runs"]["steps"][0]["run"])
+                fixture.env["INPUT_EXPECTED_RELEASE_COMMIT"] = ""
             run = metadata["runs"]["steps"][0]
             self.assertEqual(run["id"], step)
             self.assertEqual(run["shell"], "bash")
@@ -63,6 +71,8 @@ class Metadata(unittest.TestCase):
                 line.split("=", 1) for line in output.read_text().splitlines()
             )
             self.assertEqual(set(actual), expected)
+            if step in ("preview", "publish"):
+                self.assertEqual(actual["releases"], "[]")
             if step == "preview":
                 self.assertEqual(actual["ready"], "true")
                 self.assertEqual(actual["release-commit"], "")

@@ -6,13 +6,22 @@ setup
 output published false
 output published-packages '[]'
 output release-commit ''
+output releases '[]'
+expected=${INPUT_EXPECTED_RELEASE_COMMIT:-}
+if [[ -n $expected ]]; then
+  [[ $expected =~ ^[0-9a-f]{40}$ ]] || fail 'expected-release-commit must be a lowercase 40-hex commit.'
+  if [[ $# -gt 0 && $1 != "$expected" ]]; then
+    fail 'Conflicting positional and input expected release commits.'
+  fi
+fi
 verify_publication_batch
-# The repository workflow passes the preview selection. Composite callers omit it.
-if [[ $# -gt 0 && $release != "$1" ]]; then
+# Preserve the positional guard, including an explicitly empty argument.
+if [[ ( $# -gt 0 && $release != "$1" ) || ( -n $expected && $release != "$expected" ) ]]; then
   fail 'Release batch changed after preview; use an explicit retry.'
 fi
 [[ -n $release ]] || exit 0
 output release-commit "$release"
+output releases "$(jq -c 'map({package, version, tag})' "$temp/batch.json")"
 # Inspect all remote objects before creating anything. API failure is not absence.
 inspect_publication
 require_publication_ready

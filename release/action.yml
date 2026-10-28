@@ -1,0 +1,162 @@
+name: Changenote Release
+description: Set up changenote and manage, select, or publish releases from package configuration (Linux).
+inputs:
+  operation:
+    description: auto, manage-pr, select, publish, or retry-publication. auto manages PRs and publishes pending batches on pushes; on manual runs it only manages PRs.
+    default: auto
+  github-token:
+    description: Token with contents read for select, contents write for publish, and contents and pull requests write for PR management.
+    default: ${{ github.token }}
+  base-branch:
+    description: Release branch. Defaults to the repository default branch.
+    default: ''
+  expected-release-commit:
+    description: Exact full commit SHA validated by external CI. Required for publish and rejected for other operations.
+    default: ''
+  retry:
+    description: Include a completed batch in select for downstream retries. Only allowed on workflow_dispatch.
+    default: 'false'
+  node-version:
+    description: Node.js version for configured npm lockfiles.
+    default: 'lts/*'
+  npm-version:
+    description: Exact npm version. Empty uses the npm bundled with Node.js.
+    default: ''
+  rust-toolchain:
+    description: Rust toolchain for the trusted CLI build and configured Cargo lockfiles.
+    default: stable
+  uv-version:
+    description: uv version for configured uv lockfiles. Empty uses setup-uv's default.
+    default: ''
+  commit-message:
+    description: Release commit message.
+    default: 'chore(release): version packages'
+  pr-title:
+    description: Release PR title.
+    default: 'chore(release): version packages'
+outputs:
+  release-commit:
+    description: Selected or published verified commit, or empty when no work is selected.
+    value: ${{ steps.release.outputs.release-commit }}
+  releases:
+    description: JSON array of package, version, and tag for the selected batch.
+    value: ${{ steps.release.outputs.releases }}
+  published:
+    description: Whether this run created remote tags or GitHub Releases.
+    value: ${{ steps.release.outputs.published }}
+  published-packages:
+    description: JSON array of name and version changed by publication in this run.
+    value: ${{ steps.release.outputs.published-packages }}
+  publication-plan:
+    description: Inspected publication plan for select, auto, and retry-publication.
+    value: ${{ steps.release.outputs.publication-plan }}
+  publication-needed:
+    description: Whether inspection found incomplete GitHub publication work.
+    value: ${{ steps.release.outputs.publication-needed }}
+  ready:
+    description: Whether the requested inspection or publication completed without conflicts.
+    value: ${{ steps.release.outputs.ready }}
+  has-notes:
+    description: Whether PR management found pending notes.
+    value: ${{ steps.release.outputs.has-notes }}
+  pr-number:
+    description: Managed PR number, or empty.
+    value: ${{ steps.release.outputs.pr-number }}
+  pr-operation:
+    description: created, updated, closed, or none.
+    value: ${{ steps.release.outputs.pr-operation }}
+runs:
+  using: composite
+  steps:
+    - name: Validate release inputs
+      id: inputs
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_OPERATION: ${{ inputs.operation }}
+        INPUT_EXPECTED_RELEASE_COMMIT: ${{ inputs.expected-release-commit }}
+        INPUT_RETRY: ${{ inputs.retry }}
+        INPUT_NPM_VERSION: ${{ inputs.npm-version }}
+        INPUT_RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
+      run: bash "$ACTION_PATH/../scripts/action/release.sh" validate
+    - name: Identify trusted CLI source
+      id: cli
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
+      run: bash "$ACTION_PATH/../scripts/action/install-cli.sh" key
+    - uses: actions/cache@v5
+      id: cache
+      with:
+        path: ${{ steps.cli.outputs.directory }}
+        key: ${{ steps.cli.outputs.key }}
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ inputs.rust-toolchain }}
+    - name: Build trusted CLI
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
+      run: bash "$ACTION_PATH/../scripts/action/install-cli.sh" install
+    - name: Verify and activate CLI
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
+      run: bash "$ACTION_PATH/../scripts/action/install-cli.sh" activate
+    - name: Discover release environments
+      id: environment
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_OPERATION: ${{ steps.inputs.outputs.operation }}
+        INPUT_BASE_BRANCH: ${{ inputs.base-branch }}
+        INPUT_EXPECTED_RELEASE_COMMIT: ${{ inputs.expected-release-commit }}
+        INPUT_RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
+      run: bash "$ACTION_PATH/../scripts/action/release-environment.sh" discover
+    - uses: actions/setup-node@v7
+      if: steps.environment.outputs.npm == 'true'
+      with:
+        node-version: ${{ inputs.node-version }}
+        package-manager-cache: false
+    - name: Install selected npm version
+      if: steps.environment.outputs.npm == 'true' && inputs.npm-version != ''
+      shell: bash
+      env:
+        INPUT_NPM_VERSION: ${{ inputs.npm-version }}
+      run: npm install --global --ignore-scripts --no-audit --no-fund "npm@$INPUT_NPM_VERSION"
+    - uses: astral-sh/setup-uv@v7
+      if: steps.environment.outputs.uv == 'true'
+      with:
+        version: ${{ inputs.uv-version }}
+    - name: Populate offline package caches
+      id: warm
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_OPERATION: ${{ steps.inputs.outputs.operation }}
+        INPUT_BASE_BRANCH: ${{ inputs.base-branch }}
+        INPUT_EXPECTED_RELEASE_COMMIT: ${{ inputs.expected-release-commit }}
+        INPUT_RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
+      run: bash "$ACTION_PATH/../scripts/action/release-environment.sh" warm
+    - name: Run release operation
+      id: release
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_OPERATION: ${{ steps.inputs.outputs.operation }}
+        INPUT_BASE_BRANCH: ${{ inputs.base-branch }}
+        INPUT_EXPECTED_RELEASE_COMMIT: ${{ inputs.expected-release-commit }}
+        INPUT_RETRY: ${{ inputs.retry }}
+        INPUT_NPM_VERSION: ${{ inputs.npm-version }}
+        INPUT_RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
+        INPUT_COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        INPUT_PR_TITLE: ${{ inputs.pr-title }}
+        INPUT_PR_ENVIRONMENT_READY: ${{ steps.environment.outputs.pr-environment-ready != 'false' && steps.warm.outputs.pr-environment-ready != 'false' }}
+      run: bash "$ACTION_PATH/../scripts/action/release.sh" run
