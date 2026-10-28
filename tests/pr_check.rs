@@ -358,9 +358,90 @@ fn cli(root: &Path, args: &[&str]) -> Output {
     assert_eq!(
         snapshot(root),
         before,
-        "check must not write even on failure"
+        "read-only commands must not write even on failure"
     );
     output
+}
+
+#[test]
+fn empty_notes_fail_validation_even_with_release_exemptions() {
+    for content in [
+        "",
+        " \t\n\u{00a0}\u{2003}\r\n",
+        "---\n---",
+        "---\r\n---\r\n",
+        "---\n---\nNo release",
+        "---\n{}\n---\nNo release",
+        "---\npkg: patch\n---",
+        "---\npkg: patch\n---\n \t\n",
+        "---\r\npkg: patch\r\n---\r\n\u{00a0}\u{2003}\r\n",
+    ] {
+        let dir = project();
+        let root = dir.path();
+        write(root, "packages/pkg/old.txt", "changed");
+        write(root, ".changenote/empty.md", content);
+        commit(root);
+        let out = cli(root, &["status"]);
+        assert_eq!(out.status.code(), Some(1), "accepted {content:?}");
+        assert!(out.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("invalid note"));
+        assert!(String::from_utf8_lossy(&out.stderr).contains("empty.md"));
+        for coverage in ["pr", "package"] {
+            for exempt in [false, true] {
+                let mut args = vec!["check", "--since", "base", "--coverage", coverage];
+                if exempt {
+                    args.extend(["--skip-release", "--reason", "No release needed"]);
+                }
+                let out = cli(root, &args);
+                assert_eq!(out.status.code(), Some(1), "accepted {content:?}: {args:?}");
+                assert!(out.stdout.is_empty());
+                assert!(String::from_utf8_lossy(&out.stderr).contains("invalid note"));
+                assert!(String::from_utf8_lossy(&out.stderr).contains("empty.md"));
+            }
+        }
+    }
+}
+
+#[test]
+fn no_note_exemptions_preserve_pending_notes() {
+    let dir = project();
+    let root = dir.path();
+    let pending = cli(root, &["status"]);
+    assert!(pending.status.success());
+    write(root, "packages/pkg/guide.md", "Documentation only");
+    commit(root);
+    for coverage in ["pr", "package"] {
+        let mut args = vec!["check", "--since", "base", "--coverage", coverage];
+        let out = cli(root, &args);
+        assert_eq!(out.status.code(), Some(1));
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(report["changed_packages"], serde_json::json!(["pkg"]));
+        assert_eq!(report["note_paths"], serde_json::json!([]));
+        assert_eq!(report["passed"], false);
+        args.push("--skip-release");
+        let out = cli(root, &args);
+        assert_eq!(out.status.code(), Some(2));
+        assert!(out.stdout.is_empty());
+        for reason in ["", " \t\r\n\u{2003}"] {
+            let mut invalid = args.clone();
+            invalid.extend(["--reason", reason]);
+            let out = cli(root, &invalid);
+            assert_eq!(out.status.code(), Some(1));
+            assert!(out.stdout.is_empty());
+            assert!(String::from_utf8_lossy(&out.stderr).contains("reason cannot be empty"));
+        }
+        let reason = "Documentation only; no release artifacts change";
+        args.extend(["--reason", reason]);
+        let out = cli(root, &args);
+        assert!(out.status.success());
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(report["passed"], true);
+        assert_eq!(report["note_paths"], serde_json::json!([]));
+        assert_eq!(report["skip_reason"], reason);
+    }
+    let after = cli(root, &["status"]);
+    assert!(after.status.success());
+    assert_eq!(after.stdout, pending.stdout);
 }
 
 #[test]

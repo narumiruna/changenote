@@ -12,6 +12,19 @@ Requires stable Rust with edition 2024 support. Git is required for `check` and 
 cargo install --path . --locked
 ```
 
+## Decide whether a note is needed
+
+Follow the repository's release policy and check the change's effect on users and release artifacts, not only its file type.
+
+- If a release is needed, add or update a note with a configured package, a valid bump, and a nonempty summary of the effect on users.
+- If no release is needed, create no note and state the reason in the completion report or PR description.
+  - Documentation-only changes, test-only changes, and internal refactors without release impact normally need no note.
+
+Do not use empty notes as no-release markers or invent a package bump or summary.
+Empty files, whitespace-only files, delimiter-only notes, and notes without package assignments or a nonempty summary are invalid.
+For changes that need a check exemption, see [Check PR notes](#check-pr-notes).
+An exemption removes the missing-note requirement, not validation of pending notes.
+
 ## Single package
 
 Run commands from the repository root, or use the global `--root PATH` option.
