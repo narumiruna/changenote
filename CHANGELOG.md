@@ -1,3 +1,9 @@
+## 0.9.1
+
+### Patch Changes
+
+- Publish the Rust crate to crates.io from the verified release commit through Trusted Publishing, with safe retries for existing versions.
+
 ## 0.9.0
 
 ### Minor Changes
