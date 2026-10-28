@@ -1,0 +1,101 @@
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Manage the release PR or retry publication
+        type: choice
+        default: manage-pr
+        options: [manage-pr, retry-publication]
+permissions:
+  contents: read
+env:
+  CHANGENOTE_NODE_VERSION: '26.11.1'
+  CHANGENOTE_NPM_VERSION: '11.20.0'
+jobs:
+  select:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.operation == 'retry-publication')
+    runs-on: ubuntu-latest
+    outputs:
+      release-commit: ${{ steps.select.outputs.release-commit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: narumiruna/changenote/release@<full-action-commit-sha>
+        id: select
+        with:
+          operation: select
+          retry: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'retry-publication' }}
+          node-version: ${{ env.CHANGENOTE_NODE_VERSION }}
+          npm-version: ${{ env.CHANGENOTE_NPM_VERSION }}
+
+  validate:
+    needs: select
+    if: needs.select.outputs.release-commit != ''
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      revision: ${{ needs.select.outputs.release-commit }}
+
+  release:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.operation == 'manage-pr')
+    concurrency:
+      group: changenote-release-pr-main
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: narumiruna/changenote/release@<full-action-commit-sha>
+        with:
+          operation: manage-pr
+          node-version: ${{ env.CHANGENOTE_NODE_VERSION }}
+          npm-version: ${{ env.CHANGENOTE_NPM_VERSION }}
+          commit-message: 'chore(release): version Logice'
+          pr-title: 'chore(release): version Logice'
+
+  publish:
+    needs: [select, validate]
+    if: ${{ !cancelled() && needs.validate.result == 'success' && needs.select.outputs.release-commit != '' }}
+    concurrency:
+      group: changenote-publication-main
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release-commit: ${{ steps.publish.outputs.release-commit }}
+      releases: ${{ steps.publish.outputs.releases }}
+      published: ${{ steps.publish.outputs.published }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.select.outputs.release-commit }}
+          persist-credentials: false
+      - uses: narumiruna/changenote/release@<full-action-commit-sha>
+        id: publish
+        with:
+          operation: publish
+          expected-release-commit: ${{ needs.select.outputs.release-commit }}
+          node-version: ${{ env.CHANGENOTE_NODE_VERSION }}
+          npm-version: ${{ env.CHANGENOTE_NPM_VERSION }}
+
+  docker:
+    needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.publish.outputs.release-commit != '' && (needs.publish.outputs.published == 'true' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'retry-publication')) }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      revision: ${{ needs.publish.outputs.release-commit }}
+      version-tag: ${{ fromJSON(needs.publish.outputs.releases)[0].tag }}

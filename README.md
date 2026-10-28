@@ -506,7 +506,12 @@ Use a clean checkout, review the result, and do not run concurrent local version
 
 ## GitHub Actions
 
-This repository provides four reusable composite Actions:
+For config-driven setup, use `narumiruna/changenote/release@<full-action-commit-sha>`.
+It installs a compatible CLI, prepares supported package-manager caches, and runs automatic or separate release operations.
+See the [high-level Action guide](docs/github-actions.md) for minimal and Logice-style external-CI workflows.
+Package configuration needs no new fields. Existing Actions remain supported.
+
+The four lower-level composite Actions are:
 
 - `narumiruna/changenote@<full-commit-sha>`: create or update a Release PR.
 - `narumiruna/changenote/publish@<full-commit-sha>`: publish annotated tags and GitHub Releases.
@@ -681,8 +686,15 @@ The workflow builds the CLI instead of installing it and does not push version c
 | Release PR, Publication, Preview | `base-branch` | Repository default branch |
 | Release PR | `commit-message` | `chore(release): version packages` |
 | Release PR | `pr-title` | `chore(release): version packages` |
+| Publication | `expected-release-commit` | Empty; retain latest-batch selection |
 
 The PR Action outputs `has-notes` (`true` or `false`), `pr-number` (number or empty string), and `pr-operation` (`created`, `updated`, `closed`, or `none`). `updated` includes a no-op version rerun that refreshes the PR metadata.
+
+The publication Action accepts an optional `expected-release-commit`, a full lowercase 40-character commit SHA.
+A mismatch with the verified latest batch fails before remote tag or Release writes.
+Use this input after external CI instead of calling internal scripts.
+Both preview and publication output `releases`, a JSON array of `package`, `version`, and `tag` for the verified batch.
+It includes all batch packages, including retries that create no remote objects; no batch returns `[]`.
 
 The publication Action outputs `release-commit` (commit SHA or empty string), `published` (`true` if this run created any remote tag or GitHub Release), and `published-packages` (JSON, for example `[{"name":"pkg-a","version":"1.2.0"}]`). This is not registry publication. Read outputs only after successful steps.
 
@@ -719,7 +731,9 @@ The repository contains one Rust Cargo package and one Python distribution that 
 - `python/changenote/`: Python wrapper module for the Rust CLI.
 - `python/tests/`: wrapper tests.
 - `.changenote/`: repository-level notes and release configuration.
-- `action.yml`, `publish/action.yml`, `preview/action.yml`, `check/action.yml`: reusable Linux GitHub Actions.
+- `release/action.yml`: config-driven Linux GitHub Action with CLI and package-manager setup.
+- `action.yml`, `publish/action.yml`, `preview/action.yml`, `check/action.yml`: lower-level Linux GitHub Actions.
+- `examples/github-actions/`: minimal and external-CI consumer workflows.
 - `scripts/action/`, `tests/actions/`: Action scripts and local Git/mock GitHub tests.
 
 Run checks from the repository root:

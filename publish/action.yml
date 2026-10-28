@@ -7,10 +7,16 @@ inputs:
   base-branch:
     description: Base branch. Defaults to the repository default branch.
     default: ''
+  expected-release-commit:
+    description: Expected lowercase 40-hex release commit. Empty selects the latest batch without a commit guard.
+    default: ''
 outputs:
   release-commit:
     description: Validated release commit, or an empty string.
     value: ${{ steps.publish.outputs.release-commit }}
+  releases:
+    description: JSON array of package, version, and tag objects from the verified saved batch.
+    value: ${{ steps.publish.outputs.releases }}
   published:
     description: Whether this run created a remote tag or GitHub Release.
     value: ${{ steps.publish.outputs.published }}
@@ -25,5 +31,6 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         INPUT_BASE_BRANCH: ${{ inputs.base-branch }}
+        INPUT_EXPECTED_RELEASE_COMMIT: ${{ inputs.expected-release-commit }}
         ACTION_PATH: ${{ github.action_path }}
       run: bash "$ACTION_PATH/../scripts/action/publish.sh"

@@ -577,7 +577,7 @@ class Actions(unittest.TestCase):
         _, outputs = self.action("publish")
         self.assertEqual(
             outputs,
-            {"published": "false", "published-packages": "[]", "release-commit": ""},
+            {"published": "false", "published-packages": "[]", "release-commit": "", "releases": "[]"},
         )
 
     def test_manual_batch_edits_and_versions_rejected(self):

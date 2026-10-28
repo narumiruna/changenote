@@ -1,0 +1,27 @@
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Manage the release PR or retry publication
+        type: choice
+        default: manage-pr
+        options: [manage-pr, retry-publication]
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: changenote-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: narumiruna/changenote/release@<full-action-commit-sha>
+        with:
+          operation: ${{ inputs.operation || 'auto' }}
