@@ -1,3 +1,9 @@
+## 0.9.2
+
+### Patch Changes
+
+- Update the release skill to omit notes when no release is needed and report the reason instead of creating empty notes.
+
 ## 0.9.1
 
 ### Patch Changes
