@@ -1,3 +1,13 @@
+## 0.9.0
+
+### Minor Changes
+
+- Add a config-driven release Action with trusted CLI installation and automatic package-cache preparation. Support read-only release selection, guarded publication after external CI, and complete package version and tag outputs.
+
+### Patch Changes
+
+- Fix Release PR updates after note renames and preserve non-UTF-8 note filenames during publication preview and retries.
+
 ## 0.8.0
 
 ### Minor Changes
