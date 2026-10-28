@@ -56,15 +56,24 @@ fn parses_requested_example_and_crlf() {
 
 #[test]
 fn rejects_invalid_notes() {
-    for text in [
+    for source in [
+        "",
+        " \t\n\u{00a0}\u{2003}\n",
         "hello",
-        "---\npkg-a: minor",
+        "---\n---",
+        "---\n---\nNo release",
+        "---\n{}\n---",
         "---\n{}\n---\ntext",
+        "---\npkg-a: minor",
         "---\npkg-a: banana\n---\ntext",
+        "---\npkg-a: minor\n---",
         "---\npkg-a: minor\n---\n",
+        "---\npkg-a: minor\n---\n \t\n\u{00a0}\u{2003}\n",
         "---\npkg-a: patch\npkg-a: major\n---\ntext",
     ] {
-        assert!(parse_note(text).is_err(), "accepted {text:?}");
+        for text in [source.to_owned(), source.replace('\n', "\r\n")] {
+            assert!(parse_note(&text).is_err(), "accepted {text:?}");
+        }
     }
 }
 

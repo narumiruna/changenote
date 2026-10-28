@@ -1,6 +1,7 @@
 use changenote::{init_with_version_file, load_config, parse_note};
 use semver::Version;
 use std::{
+    collections::BTreeMap,
     fs,
     io::Write,
     path::Path,
@@ -205,31 +206,76 @@ fn file_and_stdin_messages_preserve_multiline_markdown() {
 #[test]
 fn message_input_failures_do_not_allocate_notes() {
     let dir = tempfile::tempdir().unwrap();
-    changenote::init(dir.path(), "pkg", Version::new(1, 0, 0)).unwrap();
-    fs::write(dir.path().join("empty"), " \n").unwrap();
-    fs::write(dir.path().join("bad-utf8"), [0xff, 0xfe]).unwrap();
-    fs::create_dir(dir.path().join("directory")).unwrap();
-    for name in ["empty", "bad-utf8", "missing", "directory"] {
+    let root = dir.path();
+    changenote::init(root, "pkg", Version::new(1, 0, 0)).unwrap();
+    changenote::add(
+        root,
+        "existing",
+        vec!["pkg".into()],
+        changenote::Bump::Patch,
+        "Keep this pending note",
+    )
+    .unwrap();
+    let notes = || {
+        fs::read_dir(root.join(".changenote"))
+            .unwrap()
+            .map(|entry| {
+                let path = entry.unwrap().path();
+                let bytes = fs::read(&path).unwrap();
+                (path, bytes)
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    let before = notes();
+    for name in [Some("empty-message"), None] {
+        let mut args = vec!["add"];
+        if let Some(name) = name {
+            args.push(name);
+        }
+        args.extend(["--patch", "pkg"]);
+        for message in ["", " \t\n", " \t\r\n\u{00a0}\u{2003}\r\n"] {
+            fs::write(root.join("empty"), message).unwrap();
+            for (option, value) in [
+                ("-m", message),
+                ("--message-file", "empty"),
+                ("--message-file", "-"),
+            ] {
+                let mut command = args.clone();
+                command.extend([option, value]);
+                let out = if option == "--message-file" && value == "-" {
+                    input(root, &command, message.as_bytes())
+                } else {
+                    cli(root, &command)
+                };
+                assert_eq!(
+                    out.status.code(),
+                    Some(1),
+                    "accepted {command:?}: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                assert!(out.stdout.is_empty());
+                assert_eq!(notes(), before, "changed notes for {command:?}");
+            }
+        }
+    }
+    fs::write(root.join("bad-utf8"), [0xff, 0xfe]).unwrap();
+    fs::create_dir(root.join("directory")).unwrap();
+    for name in ["bad-utf8", "missing", "directory"] {
         assert!(
-            !cli(
-                dir.path(),
-                &["add", "--patch", "pkg", "--message-file", name]
-            )
-            .status
-            .success()
+            !cli(root, &["add", "--patch", "pkg", "--message-file", name])
+                .status
+                .success()
         );
     }
-    for bytes in [b"".as_slice(), &[0xff, 0xfe]] {
-        assert!(
-            !input(
-                dir.path(),
-                &["add", "--patch", "pkg", "--message-file", "-"],
-                bytes
-            )
-            .status
-            .success()
-        );
-    }
+    assert!(
+        !input(
+            root,
+            &["add", "--patch", "pkg", "--message-file", "-"],
+            &[0xff, 0xfe]
+        )
+        .status
+        .success()
+    );
     for args in [
         vec!["add", "--patch", "pkg"],
         vec![
@@ -242,14 +288,9 @@ fn message_input_failures_do_not_allocate_notes() {
             "empty",
         ],
     ] {
-        assert_eq!(cli(dir.path(), &args).status.code(), Some(2));
+        assert_eq!(cli(root, &args).status.code(), Some(2));
     }
-    assert_eq!(
-        fs::read_dir(dir.path().join(".changenote"))
-            .unwrap()
-            .count(),
-        1
-    );
+    assert_eq!(notes(), before);
 }
 
 #[test]

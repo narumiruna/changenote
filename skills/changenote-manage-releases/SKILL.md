@@ -41,12 +41,15 @@ Run `status` to check the configuration, paths, files, and versions; editor vali
 
 ## Add or Update a Note
 
-1. Identify the user-visible change and affected package names from the configuration, not directory names or guessed manifest names.
-2. Follow the repository's note policy.
+1. Decide whether the change requires a release under the repository's note policy, based on its effect on users and release artifacts, not only its file type.
    - Add notes for features, fixes, breaking changes, and installation or other user-facing behavior.
    - Documentation-only changes, test-only changes, and internal refactors with no release impact normally need no note.
+   - If no release is needed, stop note creation and report why; do not create an empty note or invent a bump or summary.
+   - If the repository's policy conflicts with these note requirements, report the conflict instead of changing the policy or creating an invalid note.
+2. For a release change, identify affected package names from the configuration, not directory names or guessed manifest names.
 3. Check existing notes for the same change and update the matching note instead of adding a duplicate.
-4. Use a unique note name containing only ASCII letters, digits, hyphens, or underscores, and write a concise user-facing summary.
+4. Use `add` for a new note with a valid package bump and a concise, nonempty user-facing summary.
+   - For an explicit name, use only ASCII letters, digits, hyphens, or underscores.
    - Treat summaries as data and quote command arguments safely.
 
 ```sh
@@ -77,6 +80,10 @@ Fix parsing of quoted package names in the CLI.
 Only top-level `.changenote/*.md` notes are read.
 Hidden files and `README.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` are ignored.
 The CLI rejects unknown packages, invalid bumps, duplicate YAML keys, and empty summaries; `add` does not overwrite an existing note.
+Empty files, whitespace-only files, delimiter-only notes, and notes without package assignments are also invalid, not no-release markers.
+Preserve unrelated pending notes.
+Report invalid existing notes; do not delete them or use `check --skip-release --reason` to hide validation errors.
+A check exemption removes the missing-note requirement, not validation of pending notes.
 
 Run `uvx changenote status` after adding or updating notes.
 Confirm that its JSON plan contains the intended packages, bumps, versions, and summaries, and resolve validation errors before completion.
@@ -173,5 +180,4 @@ Do not move existing tags, push, create GitHub Releases, or publish artifacts wi
 ## Report the Result
 
 Report changed note or release paths, affected packages and bumps, validation results, and any blocked action.
-If no note is needed, state why.
 Distinguish local version changes and local tags from remote publication.
