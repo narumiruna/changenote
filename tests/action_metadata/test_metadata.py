@@ -119,7 +119,7 @@ class Metadata(unittest.TestCase):
         self.assertEqual(
             workflow["jobs"]["release"]["if"], "github.ref == 'refs/heads/main' && needs.route.outputs.manage-pr == 'true'"
         )
-        for name in ("release", "publish", "wheels"):
+        for name in ("release", "publish", "crates-io", "wheels"):
             job = workflow["jobs"][name]
             self.assertEqual(job["steps"][0]["with"]["persist-credentials"], "false")
         self.assertEqual(workflow["jobs"]["release"]["steps"][-1]["uses"], "./")
@@ -211,6 +211,49 @@ class Metadata(unittest.TestCase):
         self.assertIn("uv publish --trusted-publishing never", command)
         self.assertIn("--check-url https://pypi.org/simple/", command)
 
+    def test_crates_io_uses_validated_commit_and_retries(self):
+        jobs = read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]
+        crate = jobs["crates-io"]
+        self.assertEqual(crate["needs"], "publish")
+        self.assertIn("needs.publish.result == 'success'", crate["if"])
+        self.assertIn("needs.publish.outputs.release-commit != ''", crate["if"])
+        self.assertNotIn("outputs.published", crate["if"])
+        self.assertEqual(crate["permissions"], {"contents": "read", "id-token": "write"})
+        for name, job in jobs.items():
+            if name != "crates-io":
+                self.assertNotIn("id-token", job.get("permissions", {}))
+        self.assertEqual(crate["concurrency"], {
+            "group": "changenote-crates-io-main", "cancel-in-progress": "false",
+        })
+        self.assertEqual(crate["environment"], {
+            "name": "crates-io", "url": "https://crates.io/crates/changenote",
+        })
+        source, workflow = crate["steps"][:2]
+        self.assertEqual(source["with"]["ref"], "${{ needs.publish.outputs.release-commit }}")
+        self.assertEqual(source["with"]["path"], "source")
+        self.assertEqual(workflow["with"]["path"], "workflow")
+        self.assertNotIn("ref", workflow["with"])
+        self.assertEqual(workflow["with"]["persist-credentials"], "false")
+        prepare = next(step for step in crate["steps"] if step.get("id") == "prepare")
+        self.assertIn("workflow/scripts/prepare-python-release.py source", prepare["run"])
+        self.assertIn('echo "version=$version" >> "$GITHUB_OUTPUT"', prepare["run"])
+        auth = next(step for step in crate["steps"] if step.get("id") == "auth")
+        self.assertRegex(auth["uses"], r"^rust-lang/crates-io-auth-action@[0-9a-f]{40}$")
+        self.assertNotIn("continue-on-error", auth)
+        self.assertLess(crate["steps"].index(prepare), crate["steps"].index(auth))
+        upload = crate["steps"][-1]
+        self.assertLess(crate["steps"].index(auth), len(crate["steps"]) - 1)
+        self.assertNotIn("if", upload)
+        self.assertEqual(upload["working-directory"], "source")
+        self.assertEqual(upload["env"], {
+            "CARGO_REGISTRY_TOKEN": "${{ steps.auth.outputs.token }}",
+            "RELEASE_VERSION": "${{ steps.prepare.outputs.version }}",
+        })
+        self.assertEqual(
+            upload["run"],
+            'uv run --no-project python ../workflow/scripts/action/publish-crate.py . "$RELEASE_VERSION"',
+        )
+
     def test_job_conditions_execute_routing_and_failure_cases(self):
         jobs = read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]
 
@@ -231,21 +274,25 @@ class Metadata(unittest.TestCase):
             "needs.wheels.result": "skipped",
         }
         self.assertTrue(enabled("release", values))
-        for job in ("publish", "wheels", "pypi"):
+        for job in ("publish", "crates-io", "wheels", "pypi"):
             self.assertFalse(enabled(job, values))
         # Explicit retry skips PR management. Publication need not create new tags.
         values.update({"needs.route.outputs.manage-pr": "false", "needs.route.outputs.publish": "true"})
         self.assertFalse(enabled("release", values))
         self.assertTrue(enabled("publish", values))
         values.update({"needs.publish.result": "success", "needs.publish.outputs.release-commit": "validated", "needs.wheels.result": "success"})
-        for job in ("publish", "wheels", "pypi"):
+        for job in ("publish", "crates-io", "wheels", "pypi"):
             self.assertTrue(enabled(job, values))
             self.assertFalse(enabled(job, values, cancelled=True))
         for result in ("failure", "cancelled", "skipped"):
             self.assertFalse(enabled("publish", dict(values, **{"needs.route.result": result})))
+            self.assertFalse(enabled("crates-io", dict(values, **{"needs.publish.result": result})))
             self.assertFalse(enabled("wheels", dict(values, **{"needs.publish.result": result})))
             self.assertFalse(enabled("pypi", dict(values, **{"needs.wheels.result": result})))
+        self.assertFalse(enabled("crates-io", dict(values, **{"needs.publish.outputs.release-commit": ""})))
         self.assertFalse(enabled("wheels", dict(values, **{"needs.publish.outputs.release-commit": ""})))
+        # A PyPI build failure must not prevent independent crates.io recovery.
+        self.assertTrue(enabled("crates-io", dict(values, **{"needs.wheels.result": "failure"})))
         # Publish has no release-result predicate: PR failure must not block recovery.
         self.assertNotIn("needs.release.result", jobs["publish"]["if"])
 
