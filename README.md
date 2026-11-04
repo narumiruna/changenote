@@ -2,7 +2,7 @@
 
 A Rust CLI for language-independent change notes, SemVer versions, changelogs, and release tags. Inspired by [Changesets](https://github.com/changesets/changesets).
 
-Each package has an explicit directory and a primary version file: a package manifest or a plain-text file. Optional additional version files receive the same version. Plain-text version files need no language runtime or package manager. Manifest releases with an existing supported lockfile need the corresponding package manager.
+Each package has an explicit directory and a primary version file: a package manifest, an Xcode configuration file, or a plain-text file. Optional additional version files receive the same version. Plain-text and Xcode configuration version files need no language runtime or package manager. Manifest releases with an existing supported lockfile need the corresponding package manager.
 
 ## Install
 
@@ -70,7 +70,7 @@ changenote init --name sdk --version-file packages/sdk/package.json
 ```
 
 Use one command for a new configuration. The source path is relative to `--root`.
-Its directory becomes the package directory, and its filename selects the version format.
+Its directory becomes the package directory, and its filename or extension selects the version format.
 The command reads the existing version and creates only `.changenote/config.json`.
 It does not change the source, create a second `VERSION`, or overwrite an existing configuration.
 The source and an existing changelog must be regular files, not symlinks. Source parent directories inside the repository must not be symlinks.
@@ -119,16 +119,25 @@ Packages in any language can use a plain-text `VERSION` file, including Python, 
 
 For root and nested Go modules, see the [Go release guide](docs/go.md), including v2+ module paths and tag prefixes.
 
-`version_file` is relative to the package directory. Its filename selects the version field:
+`version_file` is relative to the package directory. Its filename or extension selects the version field:
 
 | Filename | Version field |
 | --- | --- |
 | `pyproject.toml` | `project.version` |
 | `Cargo.toml` | `package.version` |
 | `package.json` | Top-level `version` |
+| `*.xcconfig` | One literal `MARKETING_VERSION` assignment |
 | Other filenames, including `VERSION` | Plain-text stable SemVer string |
 
 Manifest versions must be explicit strings. Dynamic Python versions, Poetry-only versions, and inherited Cargo workspace versions are not supported. TOML comments and unrelated fields are preserved. JSON updates replace only the top-level version value token. Every other byte is preserved, including indentation, line endings, field order, number spelling, and the presence or absence of a final newline. Duplicate top-level version keys, including escaped spellings of the same key, are rejected. Dependency requirements are not updated. Use `init --version-file` to adopt an existing source without changing it.
+
+Xcode configuration version files require one unconditional `MARKETING_VERSION = 1.2.3` assignment with an unquoted stable SemVer value.
+Only the version token changes; comments, spacing, line endings, other settings, and build numbers remain unchanged.
+Includes, other directives, line continuations, and block comments are rejected in the configured version file.
+The file must be UTF-8 without a BOM and use only spaces, tabs, and LF or CRLF whitespace.
+Other configuration files can include this version file; changenote does not evaluate the Xcode build settings.
+See the [Swift release guide](docs/swift.md) for Xcode and XcodeGen setup, migration, build-number rules, and Swift Package Manager tags.
+Upgrade CLI and Action pins together before using this format.
 
 ### Additional version files and tag prefixes
 

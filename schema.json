@@ -109,12 +109,12 @@
           "minLength": 1
         },
         "version_file": {
-          "description": "Version file relative to the package directory. Use VERSION, pyproject.toml, Cargo.toml, or package.json. Parent components are not allowed.",
+          "description": "Version file relative to the package directory. Use VERSION, pyproject.toml, Cargo.toml, package.json, or an .xcconfig file with one literal MARKETING_VERSION assignment. Parent components are not allowed.",
           "type": "string",
           "minLength": 1
         },
         "version_outputs": {
-          "description": "Additional version files relative to the package directory. Each must match the primary version. Parent components, symlinks, and overlapping output paths are not allowed; the CLI checks these rules.",
+          "description": "Additional version files relative to the package directory, with the same formats as version_file. Each must match the primary version. Parent components, symlinks, and overlapping output paths are not allowed; the CLI checks these rules.",
           "type": "array",
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 }
