@@ -1,10 +1,13 @@
-use changenote::{Bump, add, init, release_notes, version};
+use changenote::{Bump, release_notes};
 use semver::Version;
-use std::{fs, process::Command};
+use serde_json::Value;
+use std::fs;
+use std::process::Command;
+use tempfile::TempDir;
 
-fn project() -> tempfile::TempDir {
+fn project() -> TempDir {
     let dir = tempfile::tempdir().unwrap();
-    init(dir.path(), "pkg", Version::new(1, 0, 0)).unwrap();
+    changenote::init(dir.path(), "pkg", Version::new(1, 0, 0)).unwrap();
     dir
 }
 
@@ -55,7 +58,7 @@ fn missing_empty_duplicate_and_unknown_entries_fail_without_output() {
 #[test]
 fn generated_groups_use_note_bumps_and_saved_batch_has_only_metadata() {
     let dir = project();
-    add(
+    changenote::add(
         dir.path(),
         "a",
         vec!["pkg".into()],
@@ -63,14 +66,14 @@ fn generated_groups_use_note_bumps_and_saved_batch_has_only_metadata() {
         "Fix\n\n```rs\nrun();\n```",
     )
     .unwrap();
-    add(dir.path(), "b", vec!["pkg".into()], Bump::Minor, "Feature").unwrap();
+    changenote::add(dir.path(), "b", vec!["pkg".into()], Bump::Minor, "Feature").unwrap();
     assert_eq!(changenote::status(dir.path()).unwrap()[0].notes.len(), 2);
-    version(dir.path()).unwrap();
+    changenote::version(dir.path()).unwrap();
     assert_eq!(
         release_notes(dir.path(), "pkg", &Version::new(1, 1, 0)).unwrap(),
         "### Minor Changes\n\n- Feature\n\n### Patch Changes\n\n- Fix\n  \n  ```rs\n  run();\n  ```\n"
     );
-    let batch: serde_json::Value = serde_json::from_str(
+    let batch: Value = serde_json::from_str(
         &fs::read_to_string(dir.path().join(".changenote/releases.json")).unwrap(),
     )
     .unwrap();
@@ -88,7 +91,7 @@ fn generated_nested_semver_headings_do_not_split_or_duplicate_entries() {
         let message = format!(
             "Details\n\n## {heading_version}\n\nKeep this section\n\n### {heading_version}\n\nKeep the end"
         );
-        add(
+        changenote::add(
             dir.path(),
             "nested",
             vec!["pkg".into()],
@@ -96,7 +99,7 @@ fn generated_nested_semver_headings_do_not_split_or_duplicate_entries() {
             &message,
         )
         .unwrap();
-        version(dir.path()).unwrap();
+        changenote::version(dir.path()).unwrap();
         let expected = format!("### Minor Changes\n\n- {}\n", message.replace('\n', "\n  "));
         assert_eq!(
             release_notes(dir.path(), "pkg", &Version::new(1, 1, 0)).unwrap(),
@@ -118,7 +121,7 @@ fn indented_history_entries_are_separate_from_generated_note_headings() {
             fs::write(dir.path().join("CHANGELOG.md"), history).unwrap();
             let message =
                 "Details\n\n## 1.1.0\n\nKeep current heading\n\n## 1.0.0\n\nKeep old heading";
-            add(
+            changenote::add(
                 dir.path(),
                 "nested",
                 vec!["pkg".into()],
@@ -126,7 +129,7 @@ fn indented_history_entries_are_separate_from_generated_note_headings() {
                 message,
             )
             .unwrap();
-            version(dir.path()).unwrap();
+            changenote::version(dir.path()).unwrap();
             let expected = format!("### Minor Changes\n\n- {}\n", message.replace('\n', "\n  "));
             assert_eq!(
                 release_notes(dir.path(), "pkg", &Version::new(1, 1, 0)).unwrap(),
@@ -149,8 +152,8 @@ fn code_fence_at_note_start_does_not_hide_history_entries() {
     let dir = project();
     fs::write(dir.path().join("CHANGELOG.md"), "  ## 1.0.0\n\nOld entry\n").unwrap();
     let message = "```md\n## 1.1.0\n```\n\nKeep the end";
-    add(dir.path(), "code", vec!["pkg".into()], Bump::Minor, message).unwrap();
-    version(dir.path()).unwrap();
+    changenote::add(dir.path(), "code", vec!["pkg".into()], Bump::Minor, message).unwrap();
+    changenote::version(dir.path()).unwrap();
     assert_eq!(
         release_notes(dir.path(), "pkg", &Version::new(1, 1, 0)).unwrap(),
         format!("### Minor Changes\n\n- {}\n", message.replace('\n', "\n  "))

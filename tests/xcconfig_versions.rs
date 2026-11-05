@@ -1,7 +1,9 @@
-use changenote::{init_with_version_file, load_config, status, version};
+use changenote::{init_with_version_file, load_config};
 use semver::Version;
-use serde_json::json;
-use std::{fs, path::Path, process::Command};
+use serde_json::{Value, json};
+use std::fs;
+use std::path::Path;
+use std::process::Command;
 use tempfile::TempDir;
 
 fn source(root: &Path, path: &str, content: &str) {
@@ -49,11 +51,11 @@ fn updates_only_the_marketing_version_token() {
     ] {
         let dir = fixture(before);
         let root = dir.path();
-        let plan = status(root).unwrap();
+        let plan = changenote::status(root).unwrap();
         assert_eq!(plan[0].old_version, Version::new(1, 2, 3));
         assert_eq!(plan[0].version, Version::new(1, 3, 0));
         assert_eq!(read(root, "Configuration/Version.xcconfig"), before);
-        let release = version(root).unwrap();
+        let release = changenote::version(root).unwrap();
         assert_eq!(release[0].tag, "v1.3.0");
         let start = before.find("1.2.3").unwrap();
         let mut expected = before.to_owned();
@@ -61,9 +63,9 @@ fn updates_only_the_marketing_version_token() {
         assert_eq!(read(root, "Configuration/Version.xcconfig"), expected);
         assert!(!root.join(".changenote/change.md").exists());
         let batch = read(root, ".changenote/releases.json");
-        let saved: serde_json::Value = serde_json::from_str(&batch).unwrap();
+        let saved: Value = serde_json::from_str(&batch).unwrap();
         assert_eq!(saved[0].as_object().unwrap().len(), 5);
-        assert!(version(root).unwrap().is_empty());
+        assert!(changenote::version(root).unwrap().is_empty());
         assert_eq!(read(root, ".changenote/releases.json"), batch);
     }
 }
@@ -89,7 +91,7 @@ fn init_adopts_nested_xcconfig_without_changing_files() {
     );
     assert_eq!(read(root, path), before);
     assert!(!root.join("VERSION").exists());
-    assert!(status(root).unwrap().is_empty());
+    assert!(changenote::status(root).unwrap().is_empty());
 }
 
 #[test]
@@ -161,8 +163,14 @@ fn invalid_xcconfig_fails_before_init_or_release_writes() {
         configure(root, path, &[]);
         source(root, "CHANGELOG.md", "# Existing changelog\n");
         source(root, ".changenote/releases.json", "[]\n");
-        assert!(status(root).is_err(), "status accepted {before:?}");
-        assert!(version(root).is_err(), "version accepted {before:?}");
+        assert!(
+            changenote::status(root).is_err(),
+            "status accepted {before:?}"
+        );
+        assert!(
+            changenote::version(root).is_err(),
+            "version accepted {before:?}"
+        );
         assert_eq!(read(root, path), before);
         assert_eq!(read(root, "CHANGELOG.md"), "# Existing changelog\n");
         assert_eq!(read(root, ".changenote/releases.json"), "[]\n");
@@ -232,8 +240,8 @@ fn additional_xcconfig_must_match_the_primary_version() {
         source(root, "VERSION", "1.2.3\n");
         source(root, "Version.xcconfig", before);
         configure(root, "VERSION", &["Version.xcconfig"]);
-        assert!(status(root).is_err());
-        assert!(version(root).is_err());
+        assert!(changenote::status(root).is_err());
+        assert!(changenote::version(root).is_err());
         assert_eq!(read(root, "VERSION"), "1.2.3\n");
         assert_eq!(read(root, "Version.xcconfig"), before);
         assert!(root.join(".changenote/change.md").exists());
@@ -255,7 +263,7 @@ fn documented_app_and_swift_package_configurations_work() {
     let mut examples = 0;
     for block in guide.split("```json\n").skip(1) {
         let config_text = block.split_once("```").unwrap().0;
-        let config: serde_json::Value = serde_json::from_str(config_text).unwrap();
+        let config: Value = serde_json::from_str(config_text).unwrap();
         let packages = config["packages"].as_object().unwrap();
         assert_eq!(packages.len(), 1);
         let (name, package) = packages.iter().next().unwrap();
@@ -285,14 +293,14 @@ fn documented_app_and_swift_package_configurations_work() {
         }
         let manifest = "// swift-tools-version: 6.2\n";
         source(root, "Package.swift", manifest);
-        let plan = status(root).unwrap();
+        let plan = changenote::status(root).unwrap();
         assert_eq!(plan[0].old_version, Version::new(1, 2, 3));
         assert_eq!(plan[0].version, Version::new(1, 2, 4));
         assert_eq!(
             plan[0].tag,
             format!("{}1.2.4", package["tag_prefix"].as_str().unwrap())
         );
-        version(root).unwrap();
+        changenote::version(root).unwrap();
         for path in paths {
             assert_eq!(
                 read(&root.join(package_dir), path),
@@ -337,7 +345,7 @@ fn fixed_group_updates_xcconfigs_without_changing_build_counters() {
         ".changenote/change.md",
         "---\nios: patch\n---\nFix the iOS app.\n",
     );
-    let releases = version(root).unwrap();
+    let releases = changenote::version(root).unwrap();
     assert_eq!(releases.len(), 2);
     assert_eq!(
         read(root, "ios/Version.xcconfig"),

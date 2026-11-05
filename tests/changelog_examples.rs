@@ -1,4 +1,4 @@
-use changenote::{Bump, add_with_bumps, status, version};
+use changenote::{Bump, add_with_bumps};
 use std::fs;
 
 #[test]
@@ -20,7 +20,7 @@ fn mixed_example_uses_each_packages_own_note_bump() {
         "Update shared API",
     )
     .unwrap();
-    version(dir.path()).unwrap();
+    changenote::version(dir.path()).unwrap();
     for (name, version, heading) in [
         ("pkg-python", "1.3.0", "Minor"),
         ("pkg-node", "1.2.4", "Patch"),
@@ -75,15 +75,18 @@ fn example_changelogs_have_exact_grouping_and_markdown() {
         for (name, bump, summary) in notes {
             add_with_bumps(dir.path(), name, vec![("pkg-python".into(), bump)], summary).unwrap();
         }
-        let before = status(dir.path()).unwrap();
-        assert_eq!(version(dir.path()).unwrap()[0].version, before[0].version);
+        let before = changenote::status(dir.path()).unwrap();
+        assert_eq!(
+            changenote::version(dir.path()).unwrap()[0].version,
+            before[0].version
+        );
         assert_eq!(
             fs::read_to_string(dir.path().join("CHANGELOG.md")).unwrap(),
             expected,
             "{scenario}"
         );
         let batch = fs::read(dir.path().join(".changenote/releases.json")).unwrap();
-        assert!(version(dir.path()).unwrap().is_empty());
+        assert!(changenote::version(dir.path()).unwrap().is_empty());
         assert_eq!(
             fs::read(dir.path().join(".changenote/releases.json")).unwrap(),
             batch

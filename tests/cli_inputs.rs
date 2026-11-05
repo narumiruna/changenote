@@ -1,12 +1,9 @@
-use changenote::{init_with_version_file, load_config, parse_note};
+use changenote::{Bump, init_with_version_file, load_config, parse_note};
 use semver::Version;
-use std::{
-    collections::BTreeMap,
-    fs,
-    io::Write,
-    path::Path,
-    process::{Command, Output, Stdio},
-};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Output, Stdio};
 
 fn cli(root: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_changenote"))
@@ -17,6 +14,8 @@ fn cli(root: &Path, args: &[&str]) -> Output {
 }
 
 fn input(root: &Path, args: &[&str], content: &[u8]) -> Output {
+    use std::io::Write;
+
     let mut child = Command::new(env!("CARGO_BIN_EXE_changenote"))
         .current_dir(root)
         .args(args)
@@ -212,7 +211,7 @@ fn message_input_failures_do_not_allocate_notes() {
         root,
         "existing",
         vec!["pkg".into()],
-        changenote::Bump::Patch,
+        Bump::Patch,
         "Keep this pending note",
     )
     .unwrap();

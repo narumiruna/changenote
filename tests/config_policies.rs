@@ -1,16 +1,17 @@
-use changenote::{Bump, add, add_with_bumps, status, status_with_group_causes, version};
-use serde_json::{Value, json};
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
+use changenote::{
+    Bump, DetailedRelease, SectionedRelease, add_with_bumps, status_with_group_causes,
 };
+use serde_json::{Map, Value, json};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+use tempfile::TempDir;
 
-fn project(settings: Value) -> tempfile::TempDir {
+fn project(settings: Value) -> TempDir {
     let dir = tempfile::tempdir().unwrap();
     fs::create_dir(dir.path().join(".changenote")).unwrap();
-    let mut packages = serde_json::Map::new();
+    let mut packages = Map::new();
     for name in ["a", "b", "c", "d"] {
         fs::create_dir(dir.path().join(name)).unwrap();
         fs::write(dir.path().join(name).join("VERSION"), "1.0.0\n").unwrap();
@@ -74,7 +75,7 @@ fn note(root: &Path, name: &str, packages: &[(&str, Bump)]) {
     .unwrap();
 }
 
-fn cli(root: &Path, args: &[&str]) -> std::process::Output {
+fn cli(root: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_changenote"))
         .current_dir(root)
         .args(args)
@@ -105,8 +106,8 @@ fn linked_baseline_releases_only_active_members_and_preserves_public_views() {
         group.source_note_paths,
         [PathBuf::from(".changenote/a-note.md")]
     );
-    let _old = changenote::SectionedRelease {
-        detail: changenote::DetailedRelease {
+    let _old = SectionedRelease {
+        detail: DetailedRelease {
             release: releases[0].detail.release.clone(),
             note_paths: vec![],
             fixed_group: None,
@@ -124,7 +125,7 @@ fn linked_baseline_releases_only_active_members_and_preserves_public_views() {
     let detailed: Value =
         serde_json::from_slice(&cli(root, &["status", "--include-note-paths"]).stdout).unwrap();
     assert_eq!(detailed[0]["linked_group"]["members"], json!(["a", "b"]));
-    version(root).unwrap();
+    changenote::version(root).unwrap();
     for name in ["b", "c", "d"] {
         assert_eq!(
             fs::read(root.join(name).join("VERSION")).unwrap(),
@@ -143,7 +144,7 @@ fn linked_baseline_releases_only_active_members_and_preserves_public_views() {
     let batch: Value =
         serde_json::from_slice(&fs::read(root.join(".changenote/releases.json")).unwrap()).unwrap();
     assert_eq!(batch[0].as_object().unwrap().len(), 5);
-    assert!(status(root).unwrap().is_empty());
+    assert!(changenote::status(root).unwrap().is_empty());
 }
 
 #[test]
@@ -189,10 +190,10 @@ fn ignore_retains_notes_and_linked_baselines_without_mutating_paused_outputs() {
         .replace('\n', "\r\n");
     fs::write(root.join(".changenote/paused.md"), &paused).unwrap();
     note(root, "active", &[("a", Bump::Patch)]);
-    let plan = status(root).unwrap();
+    let plan = changenote::status(root).unwrap();
     assert_eq!(plan.len(), 1);
     assert_eq!(plan[0].version.to_string(), "2.4.10");
-    version(root).unwrap();
+    changenote::version(root).unwrap();
     assert_eq!(
         fs::read_to_string(root.join(".changenote/paused.md")).unwrap(),
         paused
@@ -211,7 +212,7 @@ fn ignore_retains_notes_and_linked_baselines_without_mutating_paused_outputs() {
         "Old content\n"
     );
     let before = snapshot(root);
-    assert!(version(root).unwrap().is_empty());
+    assert!(changenote::version(root).unwrap().is_empty());
     assert_eq!(snapshot(root), before);
     let report = changenote::doctor(root);
     assert!(
@@ -235,10 +236,10 @@ fn ignored_fixed_groups_and_saved_batches_remain_unchanged() {
     );
     fs::write(dir.path().join(".changenote/releases.json"), "[]\n").unwrap();
     let before = snapshot(dir.path());
-    assert!(version(dir.path()).unwrap().is_empty());
+    assert!(changenote::version(dir.path()).unwrap().is_empty());
     assert_eq!(snapshot(dir.path()), before);
     fs::write(dir.path().join("a/VERSION"), "invalid").unwrap();
-    assert!(status(dir.path()).is_err());
+    assert!(changenote::status(dir.path()).is_err());
 }
 
 #[test]
@@ -252,17 +253,17 @@ fn ignore_rejects_invalid_lists_and_mixed_notes_before_allocation_or_writes() {
     ] {
         let dir = project(json!({"ignore":ignore}));
         let before = snapshot(dir.path());
-        assert!(status(dir.path()).is_err());
-        assert!(version(dir.path()).is_err());
+        assert!(changenote::status(dir.path()).is_err());
+        assert!(changenote::version(dir.path()).is_err());
         assert_eq!(snapshot(dir.path()), before);
     }
     let dir = project(json!({"ignore":["a"],"fixed":[["a","b"]]}));
-    assert!(status(dir.path()).is_err());
+    assert!(changenote::status(dir.path()).is_err());
     let dir = project(json!({"ignore":["b"]}));
     let root = dir.path();
     let before = snapshot(root);
     assert!(
-        add(
+        changenote::add(
             root,
             "mixed",
             vec!["a".into(), "b".into()],
@@ -286,13 +287,14 @@ fn ignore_rejects_invalid_lists_and_mixed_notes_before_allocation_or_writes() {
     )
     .unwrap();
     let before = snapshot(root);
-    assert!(version(root).is_err());
+    assert!(changenote::version(root).is_err());
     assert_eq!(snapshot(root), before);
 }
 
 #[cfg(unix)]
 #[test]
 fn failed_manager_restores_active_and_retained_notes_and_known_outputs() {
+    use std::fs::Permissions;
     use std::os::unix::fs::PermissionsExt;
     let dir = project(json!({"ignore":["b"]}));
     let root = dir.path();
@@ -306,7 +308,7 @@ fn failed_manager_restores_active_and_retained_notes_and_known_outputs() {
     fs::create_dir(root.join("bin")).unwrap();
     let manager = root.join("bin/cargo");
     fs::write(&manager, "#!/bin/sh\nprintf changed > Cargo.lock\nprintf damaged > ../.changenote/paused.md\nexit 1\n").unwrap();
-    fs::set_permissions(&manager, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&manager, Permissions::from_mode(0o755)).unwrap();
     note(root, "active", &[("a", Bump::Patch)]);
     note(root, "paused", &[("b", Bump::Minor)]);
     let before = snapshot(root);
@@ -323,6 +325,7 @@ fn failed_manager_restores_active_and_retained_notes_and_known_outputs() {
 #[cfg(unix)]
 #[test]
 fn a_shared_lock_can_change_while_a_paused_manifest_stays_unchanged() {
+    use std::fs::Permissions;
     use std::os::unix::fs::PermissionsExt;
     let dir = project(json!({"ignore":["b"]}));
     let root = dir.path();
@@ -347,7 +350,7 @@ fn a_shared_lock_can_change_while_a_paused_manifest_stays_unchanged() {
     fs::create_dir(root.join("bin")).unwrap();
     let manager = root.join("bin/cargo");
     fs::write(&manager, "#!/bin/sh\nprintf refreshed > Cargo.lock\n").unwrap();
-    fs::set_permissions(&manager, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&manager, Permissions::from_mode(0o755)).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_changenote"))
         .current_dir(root)
         .arg("version")
@@ -383,14 +386,14 @@ fn fixed_patterns_expand_before_group_validation_and_keep_sorted_causes() {
         releases[0].fixed_group.as_ref().unwrap().members,
         ["a", "b"]
     );
-    version(root).unwrap();
+    changenote::version(root).unwrap();
     assert_eq!(
         fs::read_to_string(root.join("c/VERSION")).unwrap(),
         "1.0.0\n"
     );
     let dir = project(json!({"fixed":[["***"]]}));
     note(dir.path(), "one", &[("a", Bump::Patch)]);
-    assert_eq!(status(dir.path()).unwrap().len(), 4);
+    assert_eq!(changenote::status(dir.path()).unwrap().len(), 4);
     for fixed in [
         json!([["missing*"]]),
         json!([["a*"]]),
@@ -405,11 +408,11 @@ fn fixed_patterns_expand_before_group_validation_and_keep_sorted_causes() {
     ] {
         let dir = project(json!({"fixed":fixed}));
         let before = snapshot(dir.path());
-        assert!(version(dir.path()).is_err());
+        assert!(changenote::version(dir.path()).is_err());
         assert_eq!(snapshot(dir.path()), before);
     }
     let dir = project(json!({"fixed":[["a*","b"]],"linked":[["b","c"]]}));
-    assert!(status(dir.path()).is_err());
+    assert!(changenote::status(dir.path()).is_err());
 }
 
 #[test]
@@ -426,17 +429,17 @@ fn linked_validation_overflow_and_collision_fail_before_writes() {
     ] {
         let dir = project(json!({"linked":linked}));
         let before = snapshot(dir.path());
-        assert!(status(dir.path()).is_err());
-        assert!(version(dir.path()).is_err());
+        assert!(changenote::status(dir.path()).is_err());
+        assert!(changenote::version(dir.path()).is_err());
         assert_eq!(snapshot(dir.path()), before);
     }
     let dir = project(json!({"linked":[["a","b"]],"fixed":[["b","c"]]}));
-    assert!(status(dir.path()).is_err());
+    assert!(changenote::status(dir.path()).is_err());
     let dir = project(json!({"linked":[["a","b"]]}));
     fs::write(dir.path().join("b/VERSION"), format!("1.0.{}\n", u64::MAX)).unwrap();
     note(dir.path(), "one", &[("a", Bump::Patch)]);
     let before = snapshot(dir.path());
-    assert!(version(dir.path()).is_err());
+    assert!(changenote::version(dir.path()).is_err());
     assert_eq!(snapshot(dir.path()), before);
     let dir = project(json!({"linked":[["a","b"]]}));
     setting(
@@ -449,9 +452,9 @@ fn linked_validation_overflow_and_collision_fail_before_writes() {
     );
     note(dir.path(), "one", &[("a", Bump::Patch), ("b", Bump::Minor)]);
     let before = snapshot(dir.path());
-    assert!(version(dir.path()).is_err());
+    assert!(changenote::version(dir.path()).is_err());
     assert_eq!(snapshot(dir.path()), before);
     let dir = project(json!({"linked":[]}));
-    add(dir.path(), "one", vec!["a".into()], Bump::Patch, "Fix").unwrap();
-    assert_eq!(status(dir.path()).unwrap().len(), 1);
+    changenote::add(dir.path(), "one", vec!["a".into()], Bump::Patch, "Fix").unwrap();
+    assert_eq!(changenote::status(dir.path()).unwrap().len(), 1);
 }

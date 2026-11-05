@@ -2,12 +2,10 @@
 //!
 //! This does not provide crash safety, atomic updates, or concurrent-writer safety.
 use anyhow::{Context, Result, ensure};
-use std::{
-    collections::HashSet,
-    fs,
-    io::ErrorKind,
-    path::{Path, PathBuf},
-};
+use std::collections::HashSet;
+use std::fs;
+use std::io::ErrorKind;
+use std::path::{self, Path, PathBuf};
 
 struct Snapshot {
     path: PathBuf,
@@ -21,7 +19,7 @@ pub(crate) fn apply<F: FnOnce() -> Result<()>>(paths: &[PathBuf], operation: F) 
     let mut seen = HashSet::new();
     let mut snapshots = Vec::new();
     for path in paths {
-        let path = std::path::absolute(path)
+        let path = path::absolute(path)
             .with_context(|| format!("cannot resolve transaction path {}", path.display()))?;
         if seen.insert(path.clone()) {
             let bytes = if regular_file_exists(&path)? {
@@ -55,7 +53,7 @@ pub(crate) fn apply<F: FnOnce() -> Result<()>>(paths: &[PathBuf], operation: F) 
 /// Check known output paths without writing files or taking byte snapshots.
 pub(crate) fn validate_paths(paths: &[PathBuf]) -> Result<()> {
     for path in paths {
-        let path = std::path::absolute(path)?;
+        let path = path::absolute(path)?;
         regular_file_exists(&path)?;
     }
     Ok(())
@@ -107,12 +105,11 @@ fn regular_file_exists(path: &Path) -> Result<bool> {
 mod tests {
     use super::*;
     use anyhow::bail;
-    use tempfile::tempdir;
 
     #[test]
     fn failure_after_each_stage_restores_bytes_and_absent_outputs() -> Result<()> {
         for failed_stage in 0..7 {
-            let directory = tempdir()?;
+            let directory = tempfile::tempdir()?;
             let root = directory.path();
             let paths: Vec<_> = [
                 "Cargo.toml",
@@ -178,7 +175,7 @@ mod tests {
 
     #[test]
     fn success_keeps_updates_new_outputs_and_consumed_notes() -> Result<()> {
-        let directory = tempdir()?;
+        let directory = tempfile::tempdir()?;
         let version = directory.path().join("VERSION");
         let output = directory.path().join("CHANGELOG.md");
         let note = directory.path().join("note.md");
@@ -198,7 +195,7 @@ mod tests {
 
     #[test]
     fn invalid_output_prevents_operation() -> Result<()> {
-        let directory = tempdir()?;
+        let directory = tempfile::tempdir()?;
         let version = directory.path().join("VERSION");
         let invalid = directory.path().join("CHANGELOG.md");
         fs::write(&version, "original")?;
@@ -218,7 +215,7 @@ mod tests {
 
     #[test]
     fn invalid_parent_prevents_operation() -> Result<()> {
-        let directory = tempdir()?;
+        let directory = tempfile::tempdir()?;
         let parent = directory.path().join("not-a-directory");
         fs::write(&parent, "file")?;
         let mut called = false;
@@ -235,7 +232,7 @@ mod tests {
 
     #[test]
     fn all_restore_failures_are_reported_and_other_paths_are_restored() -> Result<()> {
-        let directory = tempdir()?;
+        let directory = tempfile::tempdir()?;
         let blocked = directory.path().join("blocked-existing");
         let restored = directory.path().join("restored-note");
         let blocked_new = directory.path().join("blocked-new");
@@ -292,8 +289,8 @@ mod tests {
     #[test]
     fn symlink_outputs_and_parents_prevent_operation() -> Result<()> {
         use std::os::unix::fs::symlink;
-        let directory = tempdir()?;
-        let outside = tempdir()?;
+        let directory = tempfile::tempdir()?;
+        let outside = tempfile::tempdir()?;
         let target = outside.path().join("target");
         fs::write(&target, "outside bytes")?;
         let link = directory.path().join("link");
@@ -323,8 +320,8 @@ mod tests {
         use std::os::unix::fs::symlink;
         for replace_parent in [false, true] {
             for originally_present in [false, true] {
-                let directory = tempdir()?;
-                let outside = tempdir()?;
+                let directory = tempfile::tempdir()?;
+                let outside = tempfile::tempdir()?;
                 let parent = directory.path().join("parent");
                 fs::create_dir(&parent)?;
                 let path = parent.join("output");

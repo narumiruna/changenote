@@ -1,4 +1,9 @@
-use std::{fs, path::Path, process::Command};
+use serde_json::Value;
+use std::fs;
+use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
+use std::process::{Command, Output};
 use tempfile::TempDir;
 
 fn project(manifest: &str, content: &str, lock: &str) -> TempDir {
@@ -21,17 +26,18 @@ fn project(manifest: &str, content: &str, lock: &str) -> TempDir {
 }
 
 #[cfg(unix)]
-fn fake_tool(root: &Path, name: &str, body: &str) -> std::path::PathBuf {
+fn fake_tool(root: &Path, name: &str, body: &str) -> PathBuf {
+    use std::fs::Permissions;
     use std::os::unix::fs::PermissionsExt;
     let bin = root.join("bin");
     fs::create_dir_all(&bin).unwrap();
     let script = bin.join(name);
     fs::write(&script, format!("#!/bin/sh\n{body}\n")).unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&script, Permissions::from_mode(0o755)).unwrap();
     bin
 }
 
-fn cli(root: &Path, path: Option<&Path>, args: &[&str]) -> std::process::Output {
+fn cli(root: &Path, path: Option<&Path>, args: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_changenote"));
     command.current_dir(root).args(args);
     if let Some(path) = path {
@@ -369,7 +375,7 @@ fn real_uv_and_npm_refresh_existing_locks() {
         if tool == "uv" {
             assert!(updated.contains("version = \"1.2.4\""));
         } else {
-            let value: serde_json::Value = serde_json::from_str(&updated).unwrap();
+            let value: Value = serde_json::from_str(&updated).unwrap();
             assert_eq!(value["version"], "1.2.4");
             assert_eq!(value["packages"][""]["version"], "1.2.4");
         }

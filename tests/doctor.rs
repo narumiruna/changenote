@@ -1,11 +1,9 @@
-use changenote::{Bump, DoctorReport, DoctorStatus, add, doctor, init};
+use changenote::{Bump, DoctorReport, DoctorStatus, doctor};
 use serde_json::Value;
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use tempfile::TempDir;
 
 fn write(root: &Path, path: &str, content: &str) {
@@ -51,7 +49,7 @@ fn status(report: &DoctorReport, name: &str) -> DoctorStatus {
 
 fn project() -> TempDir {
     let dir = tempfile::tempdir().unwrap();
-    init(dir.path(), "pkg", "1.0.0".parse().unwrap()).unwrap();
+    changenote::init(dir.path(), "pkg", "1.0.0".parse().unwrap()).unwrap();
     dir
 }
 
@@ -123,7 +121,7 @@ fn invalid_config_notes_and_plan_are_reported_without_writes() {
     assert_eq!(status(&report, "notes"), DoctorStatus::Fail);
     fs::remove_file(root.join(".changenote/bad.md")).unwrap();
     write(root, "VERSION", "18446744073709551615.0.0\n");
-    add(
+    changenote::add(
         root,
         "overflow",
         vec!["pkg".into()],
@@ -187,7 +185,7 @@ fn pending_primary_and_extra_manifests_require_tools_but_no_pending_does_not() {
                 .iter()
                 .any(|check| check["name"] == "tool:npm")
         );
-        add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
+        changenote::add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
         let (passed, report) = cli(root, empty.path());
         assert!(!passed);
         let tool = report["checks"]
@@ -204,6 +202,7 @@ fn pending_primary_and_extra_manifests_require_tools_but_no_pending_does_not() {
 #[cfg(unix)]
 #[test]
 fn tools_must_be_executable_but_are_never_run() {
+    use std::fs::Permissions;
     use std::os::unix::fs::PermissionsExt;
     let bin = tempfile::tempdir().unwrap();
     let tool = bin.path().join("npm");
@@ -217,11 +216,11 @@ fn tools_must_be_executable_but_are_never_run() {
         ),
     )
     .unwrap();
-    fs::set_permissions(&tool, fs::Permissions::from_mode(0o644)).unwrap();
+    fs::set_permissions(&tool, Permissions::from_mode(0o644)).unwrap();
     let dir = manifest_project(true);
-    add(dir.path(), "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
+    changenote::add(dir.path(), "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
     assert!(!cli(dir.path(), bin.path()).0);
-    fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&tool, Permissions::from_mode(0o755)).unwrap();
     let (passed, report) = cli(dir.path(), bin.path());
     assert!(passed, "{report}");
     assert!(!sentinel.exists());
@@ -278,6 +277,7 @@ fn local_git_clean_and_dirty_state_are_read_only() {
 #[cfg(unix)]
 #[test]
 fn git_diagnostics_do_not_run_fsmonitor_hooks() {
+    use std::fs::Permissions;
     use std::os::unix::fs::PermissionsExt;
     let dir = project();
     let root = dir.path();
@@ -296,7 +296,7 @@ fn git_diagnostics_do_not_run_fsmonitor_hooks() {
         format!("#!/bin/sh\nprintf executed > '{}'\n", sentinel.display()),
     )
     .unwrap();
-    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&hook, Permissions::from_mode(0o755)).unwrap();
     assert!(
         Command::new("git")
             .current_dir(root)
@@ -316,7 +316,7 @@ fn nested_git_root_is_not_reported_as_ready() {
     let root = dir.path();
     let nested = root.join("nested");
     fs::create_dir(&nested).unwrap();
-    init(&nested, "pkg", "1.0.0".parse().unwrap()).unwrap();
+    changenote::init(&nested, "pkg", "1.0.0".parse().unwrap()).unwrap();
     assert!(
         Command::new("git")
             .current_dir(root)
@@ -342,7 +342,7 @@ fn pending_output_symlinks_fail_without_writes() {
     for path in ["VERSION", "CHANGELOG.md", ".changenote/releases.json"] {
         let dir = project();
         let root = dir.path();
-        add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
+        changenote::add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
         let output = root.join(path);
         if output.exists() {
             fs::remove_file(&output).unwrap();
@@ -362,7 +362,7 @@ fn pending_output_symlinks_fail_without_writes() {
 fn unsafe_lockfiles_fail_discovery_without_running_tools() {
     let dir = manifest_project(false);
     let root = dir.path();
-    add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
+    changenote::add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
     fs::rename(root.join("package-lock.json"), root.join("real-lock.json")).unwrap();
     std::os::unix::fs::symlink("real-lock.json", root.join("package-lock.json")).unwrap();
     let report = diagnose(root);

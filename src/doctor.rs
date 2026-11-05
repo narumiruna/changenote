@@ -1,9 +1,16 @@
 //! Read-only local release diagnostics. Package managers are never executed.
-use crate::{
-    checked_path, load_release_config, lockfile, notes, plan, release_version_paths, transaction,
-};
+use crate::config;
+use crate::lockfile;
+use crate::note;
+use crate::paths;
+use crate::release;
+use crate::sections;
+use crate::transaction;
 use serde::Serialize;
-use std::{collections::BTreeSet, env, path::Path, process::Command};
+use std::collections::BTreeSet;
+use std::env;
+use std::path::Path;
+use std::process::Command;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -27,31 +34,47 @@ pub struct DoctorReport {
 }
 
 impl DoctorReport {
-    fn push(&mut self, name: &str, status: DoctorStatus, message: impl Into<String>) {
+    fn push(&mut self, name: &str, status: DoctorStatus, message: String) {
         self.passed &= status != DoctorStatus::Fail;
         self.checks.push(DoctorCheck {
             name: name.to_owned(),
             status,
-            message: message.into(),
+            message,
         });
     }
 
     fn release_checks(&mut self, root: &Path) {
         use DoctorStatus::{Fail, Pass, Unknown};
-        let config = match load_release_config(root) {
+        let config = match config::load_release_config(root) {
             Ok(config) => {
-                self.push("config", Pass, "Configuration and version files are valid.");
+                self.push(
+                    "config",
+                    Pass,
+                    "Configuration and version files are valid.".to_owned(),
+                );
                 config
             }
             Err(error) => {
                 self.push("config", Fail, format!("{error:#}"));
-                self.push("notes", Unknown, "Configuration validation failed.");
-                self.push("plan", Unknown, "Configuration validation failed.");
-                self.push("lockfiles", Unknown, "Configuration validation failed.");
+                self.push(
+                    "notes",
+                    Unknown,
+                    "Configuration validation failed.".to_owned(),
+                );
+                self.push(
+                    "plan",
+                    Unknown,
+                    "Configuration validation failed.".to_owned(),
+                );
+                self.push(
+                    "lockfiles",
+                    Unknown,
+                    "Configuration validation failed.".to_owned(),
+                );
                 return;
             }
         };
-        let notes = match notes(root, &config) {
+        let notes = match note::notes(root, &config) {
             Ok(notes) => {
                 self.push(
                     "notes",
@@ -62,12 +85,12 @@ impl DoctorReport {
             }
             Err(error) => {
                 self.push("notes", Fail, format!("{error:#}"));
-                self.push("plan", Unknown, "Note validation failed.");
-                self.push("lockfiles", Unknown, "Note validation failed.");
+                self.push("plan", Unknown, "Note validation failed.".to_owned());
+                self.push("lockfiles", Unknown, "Note validation failed.".to_owned());
                 return;
             }
         };
-        let releases = match plan(root, &config, &notes) {
+        let releases = match release::plan(root, &config, &notes) {
             Ok(releases) => {
                 self.push(
                     "plan",
@@ -78,15 +101,19 @@ impl DoctorReport {
             }
             Err(error) => {
                 self.push("plan", Fail, format!("{error:#}"));
-                self.push("lockfiles", Unknown, "Release planning failed.");
+                self.push("lockfiles", Unknown, "Release planning failed.".to_owned());
                 return;
             }
         };
-        let paths = match release_version_paths(root, &config, &releases) {
+        let paths = match config::release_version_paths(root, &config, &releases) {
             Ok(paths) => paths,
             Err(error) => {
                 self.push("outputs", Fail, format!("{error:#}"));
-                self.push("lockfiles", Unknown, "Version output validation failed.");
+                self.push(
+                    "lockfiles",
+                    Unknown,
+                    "Version output validation failed.".to_owned(),
+                );
                 return;
             }
         };
@@ -110,12 +137,18 @@ impl DoctorReport {
             outputs.extend(locks.iter().map(|lock| lock.path.clone()));
             for release in &releases {
                 let package = &config.config.packages[&release.package];
-                if crate::sections::enabled(config.changelog.as_ref()) {
-                    outputs.push(checked_path(root, &package.path.join("CHANGELOG.md"))?);
+                if sections::enabled(config.changelog.as_ref()) {
+                    outputs.push(paths::checked_path(
+                        root,
+                        &package.path.join("CHANGELOG.md"),
+                    )?);
                 }
             }
             if !releases.is_empty() {
-                outputs.push(checked_path(root, Path::new(".changenote/releases.json"))?);
+                outputs.push(paths::checked_path(
+                    root,
+                    Path::new(".changenote/releases.json"),
+                )?);
             }
             transaction::validate_paths(&outputs)
         })();
@@ -123,7 +156,8 @@ impl DoctorReport {
             Ok(()) => self.push(
                 "outputs",
                 Pass,
-                "Pending release output path types are valid; write access was not tested.",
+                "Pending release output path types are valid; write access was not tested."
+                    .to_owned(),
             ),
             Err(error) => self.push("outputs", Fail, format!("{error:#}")),
         }
@@ -161,7 +195,7 @@ impl DoctorReport {
                 self.push(
                     "git",
                     Unknown,
-                    "No local Git working tree is available; check and tag require Git.",
+                    "No local Git working tree is available; check and tag require Git.".to_owned(),
                 );
                 return;
             }
@@ -182,7 +216,7 @@ impl DoctorReport {
                 self.push(
                     "git",
                     Fail,
-                    "Use the Git repository root; check requires a root checkout.",
+                    "Use the Git repository root; check requires a root checkout.".to_owned(),
                 );
                 return;
             }
@@ -198,9 +232,13 @@ impl DoctorReport {
         match git(&["status", "--porcelain=v1", "-z", "--untracked-files=all"]) {
             Ok(output) if output.status.success() => {
                 if output.stdout.is_empty() {
-                    self.push("git", Pass, "The local Git working tree is clean.");
+                    self.push(
+                        "git",
+                        Pass,
+                        "The local Git working tree is clean.".to_owned(),
+                    );
                 } else {
-                    self.push("git", Fail, "The local Git working tree has changes; check and tag require a clean tree.");
+                    self.push("git", Fail, "The local Git working tree has changes; check and tag require a clean tree.".to_owned());
                 }
             }
             Ok(output) => self.push(
@@ -228,12 +266,12 @@ pub fn doctor(root: &Path) -> DoctorReport {
     report.push(
         "cache",
         DoctorStatus::Unknown,
-        "Package-manager cache readiness was not checked; synchronization was not run.",
+        "Package-manager cache readiness was not checked; synchronization was not run.".to_owned(),
     );
     report.push(
         "credentials",
         DoctorStatus::Unknown,
-        "Remote credential readiness was not checked; no network requests were made.",
+        "Remote credential readiness was not checked; no network requests were made.".to_owned(),
     );
     report
 }

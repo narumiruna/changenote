@@ -1,8 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use changenote::{Bump, Coverage};
-use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
+use clap::error::ErrorKind;
+use clap::{Parser, Subcommand};
 use semver::Version;
-use std::{io::Read, path::PathBuf};
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(version, about = "Language-independent change notes and releases")]
@@ -113,6 +114,9 @@ enum Commands {
 }
 
 fn run() -> Result<()> {
+    use anyhow::Context;
+    use clap::CommandFactory;
+
     let cli = Cli::parse();
     match cli.command {
         Commands::Init {
@@ -142,7 +146,9 @@ fn run() -> Result<()> {
             kind,
         } => {
             let message = if let Some(path) = message_file {
-                if path == std::path::Path::new("-") {
+                if path == Path::new("-") {
+                    use std::io::Read;
+
                     let mut text = String::new();
                     std::io::stdin()
                         .read_to_string(&mut text)

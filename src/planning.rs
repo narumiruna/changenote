@@ -1,12 +1,14 @@
-use crate::version_file::read_version;
-use crate::{Bump, NoteData, NoteSection, Release, ReleaseConfig, load_release_config, notes};
-use anyhow::{Context, Result};
+use crate::config::{self, ReleaseConfig};
+use crate::note::{self, NoteData};
+use crate::release::{self, Bump, Release};
+use crate::sections::{self, NoteSection};
+use crate::version_file;
+use anyhow::Result;
 use semver::Version;
-use serde::{Serialize, Serializer, ser::Error};
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-};
+use serde::{Serialize, Serializer};
+use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
 
 /// A release with direct note provenance. Default and saved batches omit this metadata.
 #[derive(Debug, Serialize)]
@@ -59,7 +61,7 @@ pub struct GroupedRelease {
     pub linked_group: Option<LinkedGroup>,
 }
 
-impl std::ops::Deref for GroupedRelease {
+impl Deref for GroupedRelease {
     type Target = SectionedRelease;
     fn deref(&self) -> &Self::Target {
         &self.sectioned
@@ -67,8 +69,8 @@ impl std::ops::Deref for GroupedRelease {
 }
 
 pub fn status_with_group_causes(root: &Path) -> Result<Vec<GroupedRelease>> {
-    let config = load_release_config(root)?;
-    plan(root, &config, &notes(root, &config)?)
+    let config = config::load_release_config(root)?;
+    plan(root, &config, &note::notes(root, &config)?)
 }
 
 pub fn status_with_note_paths(root: &Path) -> Result<Vec<DetailedRelease>> {
@@ -86,6 +88,8 @@ pub fn status_with_note_sections(root: &Path) -> Result<Vec<SectionedRelease>> {
 }
 
 fn bump_version(mut version: Version, bump: Bump) -> Result<Version> {
+    use anyhow::Context;
+
     match bump {
         Bump::Major => {
             version.major = version.major.checked_add(1).context("version overflow")?;
@@ -115,7 +119,7 @@ pub(crate) fn plan(
         .map(|(name, package)| {
             Ok((
                 name.clone(),
-                read_version(&root.join(&package.path).join(&package.version_file))?,
+                version_file::read_version(&root.join(&package.path).join(&package.version_file))?,
             ))
         })
         .collect::<Result<BTreeMap<_, _>>>()?;
@@ -194,7 +198,7 @@ pub(crate) fn plan(
             linked_causes.insert(name.clone(), cause.clone());
         }
     }
-    let mut tags = std::collections::BTreeSet::new();
+    let mut tags = BTreeSet::new();
     targets
         .into_iter()
         .map(|(name, (bump, version, fixed_group))| {
@@ -202,8 +206,8 @@ pub(crate) fn plan(
                 .iter()
                 .filter_map(|(p, n)| n.packages.get(&name).map(|b| (p, n, *b)))
                 .collect();
-            let tag = crate::release_tag(config, &name, &version)?;
-            crate::reserve_release_tag(&mut tags, &tag)?;
+            let tag = release::release_tag(config, &name, &version)?;
+            release::reserve_release_tag(&mut tags, &tag)?;
             let note_types = direct
                 .iter()
                 .map(|(_, n, _)| n.kind.clone())
@@ -217,8 +221,7 @@ pub(crate) fn plan(
                 notes: direct.iter().map(|(_, n, _)| n.summary.clone()).collect(),
                 note_bumps: direct.iter().map(|(_, _, b)| *b).collect(),
             };
-            let note_sections =
-                crate::sections::group(&release, &note_types, config.changelog.as_ref());
+            let note_sections = sections::group(&release, &note_types, config.changelog.as_ref());
             let linked_group = linked_causes.remove(&release.package);
             Ok(GroupedRelease {
                 linked_group,
@@ -238,6 +241,8 @@ pub(crate) fn plan(
 
 // JSON uses forward slashes on every platform; Rust callers retain native paths.
 fn serialize_paths<S: Serializer>(paths: &[PathBuf], serializer: S) -> Result<S::Ok, S::Error> {
+    use serde::ser::Error;
+
     paths
         .iter()
         .map(|p| {

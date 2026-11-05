@@ -1,7 +1,9 @@
-use crate::json_value::{JsonValue, version_span};
+use crate::json_value::{self, JsonValue};
 use anyhow::{Context, Result, ensure};
 use semver::Version;
-use std::{fs, path::Path};
+use std::fs;
+use std::ops::Range;
+use std::path::Path;
 use toml_edit::DocumentMut;
 
 // Manifest filenames and the xcconfig extension select fields. Other files remain plain text.
@@ -10,12 +12,12 @@ enum VersionFile {
     Json {
         document: JsonValue,
         content: String,
-        span: std::ops::Range<usize>,
+        span: Range<usize>,
     },
     Toml(DocumentMut, &'static str),
     Xcconfig {
         content: String,
-        span: std::ops::Range<usize>,
+        span: Range<usize>,
     },
 }
 
@@ -25,7 +27,7 @@ impl VersionFile {
         let file = match path.file_name().and_then(|name| name.to_str()) {
             Some("package.json") => Self::Json {
                 document: serde_json::from_str(&content)?,
-                span: version_span(&content)?,
+                span: json_value::version_span(&content)?,
                 content: content.clone(),
             },
             Some(name @ ("Cargo.toml" | "pyproject.toml")) => {
@@ -79,7 +81,7 @@ impl VersionFile {
     }
 }
 
-fn xcconfig_version_span(content: &str) -> Result<std::ops::Range<usize>> {
+fn xcconfig_version_span(content: &str) -> Result<Range<usize>> {
     ensure!(
         !content.contains('\u{feff}'),
         "xcconfig version files do not support a byte order mark (BOM)"
