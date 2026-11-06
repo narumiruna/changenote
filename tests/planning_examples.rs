@@ -1,5 +1,7 @@
 use serde_json::Value;
-use std::{fs, path::Path, process::Command};
+use std::fs;
+use std::path::Path;
+use std::process::Command;
 
 fn copy_tree(from: &Path, to: &Path) {
     fs::create_dir_all(to).unwrap();

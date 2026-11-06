@@ -1,9 +1,11 @@
 use changenote::{Bump, Config, Package};
-use serde_json::json;
-use std::{collections::BTreeMap, fs, path::Path};
+use serde_json::{Value, json};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 use tempfile::TempDir;
 
-fn fixture(outputs: serde_json::Value) -> TempDir {
+fn fixture(outputs: Value) -> TempDir {
     let dir = tempfile::tempdir().unwrap();
     fs::create_dir(dir.path().join(".changenote")).unwrap();
     fs::write(dir.path().join("VERSION"), "1.2.3\n").unwrap();
@@ -68,8 +70,7 @@ fn updates_all_formats_and_preserves_saved_batch_shape() {
         "[project]\nversion = \"1.2.4\"\n"
     );
     assert_eq!(read(root, "package.json"), before.replace("1.2.3", "1.2.4"));
-    let saved: serde_json::Value =
-        serde_json::from_str(&read(root, ".changenote/releases.json")).unwrap();
+    let saved: Value = serde_json::from_str(&read(root, ".changenote/releases.json")).unwrap();
     assert_eq!(saved[0].as_object().unwrap().len(), 5);
     assert!(saved[0].get("notes").is_none());
     let batch = read(root, ".changenote/releases.json");
@@ -196,7 +197,9 @@ fn public_package_config_and_api_signatures_remain_usable() {
 #[test]
 #[cfg(unix)]
 fn extra_manifests_refresh_each_supported_lock_once_after_all_writes() {
-    use std::{os::unix::fs::PermissionsExt, process::Command};
+    use std::fs::Permissions;
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
     let dir = fixture(json!([
         "Cargo.toml",
         "pyproject.toml",
@@ -222,7 +225,7 @@ fn extra_manifests_refresh_each_supported_lock_once_after_all_writes() {
         fs::write(root.join(lock), "original\n").unwrap();
         let script = root.join("bin").join(tool);
         fs::write(&script, format!("#!/bin/sh\nIFS= read -r primary < VERSION\nIFS= read -r child < child/package.json\n[ \"$primary\" = '1.2.4' ] || exit 1\n[ \"$child\" = '{{\"version\":\"1.2.4\"}}' ] || exit 1\nprintf 'call\\n' >> {tool}-calls\nprintf 'updated\\n' > {lock}\n")).unwrap();
-        fs::set_permissions(script, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(script, Permissions::from_mode(0o755)).unwrap();
     }
     let output = Command::new(env!("CARGO_BIN_EXE_changenote"))
         .current_dir(root)

@@ -1,17 +1,26 @@
-use crate::{Bump, Release};
+use crate::paths;
+use crate::release::{Bump, Release};
+use crate::template::NoteTemplate;
 use anyhow::{Result, ensure};
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChangelogConfig {
-    #[serde(default, deserialize_with = "crate::deserialize_optional_value")]
+    #[serde(
+        default,
+        deserialize_with = "crate::config::deserialize_optional_value"
+    )]
     pub sections: Option<Vec<SectionConfig>>,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
-    #[serde(default, deserialize_with = "crate::deserialize_optional_value")]
-    pub note_template: Option<crate::template::NoteTemplate>,
+    #[serde(
+        default,
+        deserialize_with = "crate::config::deserialize_optional_value"
+    )]
+    pub note_template: Option<NoteTemplate>,
 }
 
 fn default_enabled() -> bool {
@@ -52,7 +61,7 @@ impl ChangelogConfig {
                 "section title must be nonempty, trimmed, and contain no control characters"
             );
             ensure!(
-                semver::Version::parse(section.title.split_whitespace().next().unwrap()).is_err(),
+                Version::parse(section.title.split_whitespace().next().unwrap()).is_err(),
                 "section title cannot start with a SemVer version"
             );
             ensure!(
@@ -61,7 +70,7 @@ impl ChangelogConfig {
             );
             ensure!(!section.types.is_empty(), "section types cannot be empty");
             for kind in &section.types {
-                crate::safe_name(kind)?;
+                paths::safe_name(kind)?;
                 ensure!(types.insert(kind), "duplicate section type {kind}");
             }
         }

@@ -1,7 +1,7 @@
 //! Validated file and package-name patterns. Matching never uses lossy paths.
 use anyhow::{Result, ensure};
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
-use serde::{Deserialize, Deserializer, de::Error};
+use serde::{Deserialize, Deserializer};
 use std::path::Path;
 
 #[derive(Default)]
@@ -9,13 +9,15 @@ pub(crate) struct FilePatterns(Option<(GlobSet, GlobSet)>);
 
 impl<'de> Deserialize<'de> for FilePatterns {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        use serde::de::Error;
+
         let patterns = Vec::<String>::deserialize(deserializer)?;
-        Self::new(&patterns).map_err(D::Error::custom)
+        Self::try_new(&patterns).map_err(D::Error::custom)
     }
 }
 
 impl FilePatterns {
-    fn new(patterns: &[String]) -> Result<Self> {
+    fn try_new(patterns: &[String]) -> Result<Self> {
         let mut included = GlobSetBuilder::new();
         let mut excluded = GlobSetBuilder::new();
         let mut has_inclusion = false;
@@ -114,7 +116,7 @@ mod tests {
     use super::*;
 
     fn patterns(values: &[&str]) -> FilePatterns {
-        FilePatterns::new(&values.iter().map(|s| s.to_string()).collect::<Vec<_>>()).unwrap()
+        FilePatterns::try_new(&values.iter().map(|s| s.to_string()).collect::<Vec<_>>()).unwrap()
     }
 
     #[test]
@@ -175,7 +177,7 @@ mod tests {
             vec!["[z-a]"],
         ] {
             assert!(
-                FilePatterns::new(&values.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+                FilePatterns::try_new(&values.iter().map(|s| s.to_string()).collect::<Vec<_>>())
                     .is_err(),
                 "{values:?}"
             );
@@ -185,7 +187,10 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn non_utf8_paths_are_matched_without_conversion() {
-        use std::{ffi::OsString, os::unix::ffi::OsStringExt, path::PathBuf};
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        use std::path::PathBuf;
+
         let path = PathBuf::from(OsString::from_vec(b"src/\xff.rs".to_vec()));
         assert!(patterns(&["src/*.rs"]).matches(&path));
         assert!(FilePatterns::default().matches(&path));

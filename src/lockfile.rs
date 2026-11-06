@@ -1,12 +1,11 @@
 //! Refresh existing lockfiles after all configured manifests have been updated.
-use crate::checked_path;
+use crate::paths;
 use anyhow::{Context, Result, ensure};
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::collections::BTreeMap;
+use std::fs;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 #[derive(Debug)]
 pub(crate) struct Lockfile {
@@ -45,7 +44,7 @@ pub(crate) fn discover_paths(root: &Path, paths: &[PathBuf]) -> Result<Vec<Lockf
         } else {
             path
         };
-        let manifest = checked_path(&root, relative)?;
+        let manifest = paths::checked_path(&root, relative)?;
         let mut directory = manifest
             .parent()
             .context("missing manifest directory")?
@@ -60,7 +59,7 @@ pub(crate) fn discover_paths(root: &Path, paths: &[PathBuf]) -> Result<Vec<Lockf
                         path.display()
                     );
                     let relative = path.strip_prefix(&root)?;
-                    checked_path(&root, relative)?;
+                    paths::checked_path(&root, relative)?;
                     let owner = directory.join(manifest.file_name().unwrap());
                     ensure!(
                         owner.is_file() && !fs::symlink_metadata(&owner)?.file_type().is_symlink(),
@@ -82,7 +81,7 @@ pub(crate) fn discover_paths(root: &Path, paths: &[PathBuf]) -> Result<Vec<Lockf
                     locks.insert(path.clone(), Lockfile { path, tool, args });
                     break;
                 }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
                 Err(error) => return Err(error.into()),
             }
             if directory == root {

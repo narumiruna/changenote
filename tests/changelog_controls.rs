@@ -1,9 +1,9 @@
-use changenote::{
-    Bump, add, add_with_type, release_notes, status, status_with_note_sections, version,
-};
+use changenote::{Bump, DoctorStatus, add_with_type, release_notes, status_with_note_sections};
 use semver::Version;
 use serde_json::{Value, json};
-use std::{fs, path::Path};
+use std::fs;
+use std::path::Path;
+use tempfile::TempDir;
 
 fn configure(root: &Path, changelog: Value) {
     let path = root.join(".changenote/config.json");
@@ -11,7 +11,7 @@ fn configure(root: &Path, changelog: Value) {
     config["changelog"] = changelog;
     fs::write(path, config.to_string()).unwrap();
 }
-fn project(changelog: Value) -> tempfile::TempDir {
+fn project(changelog: Value) -> TempDir {
     let dir = tempfile::tempdir().unwrap();
     changenote::init(dir.path(), "pkg", Version::new(1, 0, 0)).unwrap();
     configure(dir.path(), changelog);
@@ -43,7 +43,7 @@ fn native_templates_preserve_notes_sections_headings_and_own_bumps() {
         Some("feat"),
     )
     .unwrap();
-    let plan = status(root).unwrap();
+    let plan = changenote::status(root).unwrap();
     assert_eq!(plan[0].notes, [note.to_owned(), "Feature".to_owned()]);
     let sections = status_with_note_sections(root).unwrap();
     assert_eq!(sections[0].note_sections[0].title, "Fixes");
@@ -56,7 +56,7 @@ fn native_templates_preserve_notes_sections_headings_and_own_bumps() {
         "# Changelog\n\nIntroduction\n\n## 1.0.0\n\nOld body\n",
     )
     .unwrap();
-    version(root).unwrap();
+    changenote::version(root).unwrap();
     let body = release_notes(root, "pkg", &Version::new(1, 1, 0)).unwrap();
     assert!(body.starts_with("### Fixes\n\n- pkg@1.1.0 [patch]"));
     assert!(body.contains("  {package} $(touch forbidden)"));
@@ -84,7 +84,7 @@ fn explicit_defaults_and_empty_object_keep_original_bytes() {
         json!({"note_template":"{summary}"}),
     ] {
         let dir = project(controls);
-        add(
+        changenote::add(
             dir.path(),
             "note",
             vec!["pkg".into()],
@@ -92,7 +92,7 @@ fn explicit_defaults_and_empty_object_keep_original_bytes() {
             "Fix\n\nDetails",
         )
         .unwrap();
-        version(dir.path()).unwrap();
+        changenote::version(dir.path()).unwrap();
         bodies.push(fs::read(dir.path().join("CHANGELOG.md")).unwrap());
     }
     assert!(bodies.windows(2).all(|pair| pair[0] == pair[1]));
@@ -111,7 +111,7 @@ fn disabled_output_never_uses_stale_changelog_text() {
             .unwrap();
         }
         let before = fs::read(root.join("CHANGELOG.md")).ok();
-        add(
+        changenote::add(
             root,
             "fix",
             vec!["pkg".into()],
@@ -124,13 +124,8 @@ fn disabled_output_never_uses_stale_changelog_text() {
             ["New release body"]
         );
         let report = changenote::doctor(root);
-        assert!(
-            !report
-                .checks
-                .iter()
-                .any(|c| c.status == changenote::DoctorStatus::Fail)
-        );
-        version(root).unwrap();
+        assert!(!report.checks.iter().any(|c| c.status == DoctorStatus::Fail));
+        changenote::version(root).unwrap();
         assert_eq!(fs::read(root.join("CHANGELOG.md")).ok(), before);
         assert!(!root.join(".changenote/fix.md").exists());
         assert_eq!(fs::read_to_string(root.join("VERSION")).unwrap(), "1.0.1\n");
@@ -155,8 +150,8 @@ fn disabled_unused_symlinks_are_not_followed_or_modified() {
     let target = external.path().join("external");
     fs::write(&target, "Unrelated data").unwrap();
     std::os::unix::fs::symlink(&target, dir.path().join("CHANGELOG.md")).unwrap();
-    add(dir.path(), "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
-    version(dir.path()).unwrap();
+    changenote::add(dir.path(), "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
+    changenote::version(dir.path()).unwrap();
     assert_eq!(fs::read_to_string(target).unwrap(), "Unrelated data");
     assert!(dir.path().join("CHANGELOG.md").is_symlink());
 }
@@ -175,8 +170,8 @@ fn disabled_output_still_supports_local_tags_in_a_fixture_repository() {
             .status
             .success()
     );
-    add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
-    version(root).unwrap();
+    changenote::add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
+    changenote::version(root).unwrap();
     assert!(
         Command::new("git")
             .current_dir(root)
@@ -235,8 +230,8 @@ fn invalid_controls_fail_before_note_allocation_and_release_writes() {
     ] {
         let dir = project(controls);
         let root = dir.path();
-        assert!(add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").is_err());
-        assert!(version(root).is_err());
+        assert!(changenote::add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").is_err());
+        assert!(changenote::version(root).is_err());
         assert!(!root.join(".changenote/fix.md").exists());
         assert!(!root.join("CHANGELOG.md").exists());
         assert!(!root.join(".changenote/releases.json").exists());
@@ -255,8 +250,8 @@ fn propagated_member_without_notes_keeps_native_explanation() {
     config["packages"]["b"] = json!({"path":"b","version_file":"VERSION"});
     config["fixed"] = json!([["pkg", "b"]]);
     fs::write(path, config.to_string()).unwrap();
-    add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
-    version(root).unwrap();
+    changenote::add(root, "fix", vec!["pkg".into()], Bump::Patch, "Fix").unwrap();
+    changenote::version(root).unwrap();
     let body = release_notes(root, "b", &Version::new(1, 0, 1)).unwrap();
     assert_eq!(
         body,

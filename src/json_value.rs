@@ -1,6 +1,9 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser::SerializeMap};
+use serde::de::{self, MapAccess};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::value::RawValue;
-use std::fmt;
+use std::fmt::{self, Formatter};
+use std::marker::PhantomData;
+use std::ops::Range;
 
 // Raw scalar tokens keep exact numbers without reserving any object keys.
 #[derive(Serialize)]
@@ -77,20 +80,17 @@ impl<'de> Deserialize<'de> for JsonValue {
 
 // Borrowed RawValue tokens refer directly to the input, so their offsets can
 // select the exact value without scanning strings or interpreting number tokens.
-pub(crate) fn version_span(content: &str) -> serde_json::Result<std::ops::Range<usize>> {
+pub(crate) fn version_span(content: &str) -> serde_json::Result<Range<usize>> {
     struct VersionToken<'a>(&'a RawValue);
     impl<'de> Deserialize<'de> for VersionToken<'de> {
         fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
             struct Visitor;
             impl<'de> de::Visitor<'de> for Visitor {
                 type Value = VersionToken<'de>;
-                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                fn expecting(&self, f: &mut Formatter) -> fmt::Result {
                     f.write_str("a JSON object with one version key")
                 }
-                fn visit_map<M: de::MapAccess<'de>>(
-                    self,
-                    mut map: M,
-                ) -> Result<Self::Value, M::Error> {
+                fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
                     let mut version = None;
                     while let Some((key, value)) = map.next_entry::<String, &'de RawValue>()? {
                         if key == "version" {
@@ -117,6 +117,8 @@ pub(crate) struct Object<T>(Vec<(String, T)>);
 
 impl<T: Serialize> Serialize for Object<T> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
         let mut map = serializer.serialize_map(Some(self.0.len()))?;
         for (key, value) in &self.0 {
             map.serialize_entry(key, value)?;
@@ -127,16 +129,16 @@ impl<T: Serialize> Serialize for Object<T> {
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Visitor<T>(std::marker::PhantomData<T>);
+        struct Visitor<T>(PhantomData<T>);
 
         impl<'de, T: Deserialize<'de>> de::Visitor<'de> for Visitor<T> {
             type Value = Object<T>;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
                 formatter.write_str("a JSON object")
             }
 
-            fn visit_map<M: de::MapAccess<'de>>(self, mut map: M) -> Result<Object<T>, M::Error> {
+            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Object<T>, M::Error> {
                 let mut entries: Vec<(String, T)> = Vec::new();
                 while let Some((key, value)) = map.next_entry::<String, T>()? {
                     if let Some((_, previous)) = entries.iter_mut().find(|(name, _)| name == &key) {
@@ -149,6 +151,6 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
             }
         }
 
-        deserializer.deserialize_map(Visitor(std::marker::PhantomData))
+        deserializer.deserialize_map(Visitor(PhantomData))
     }
 }

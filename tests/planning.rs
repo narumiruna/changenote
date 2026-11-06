@@ -1,20 +1,19 @@
 use changenote::{
-    Bump, Config, Package, Release, add, add_generated, add_with_bumps, load_config, status,
-    status_with_note_paths, version, version_with_legacy_output,
+    Bump, Config, DetailedRelease, Note, Package, Release, add_generated, add_with_bumps,
+    load_config, status_with_note_paths, version_with_legacy_output,
 };
 use semver::Version;
-use serde_json::{Value, json};
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use serde_json::{Map, Value, json};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+use tempfile::TempDir;
 
-fn project(fixed: Value) -> tempfile::TempDir {
+fn project(fixed: Value) -> TempDir {
     let dir = tempfile::tempdir().unwrap();
     fs::create_dir(dir.path().join(".changenote")).unwrap();
-    let mut packages = serde_json::Map::new();
+    let mut packages = Map::new();
     for p in ["a", "b", "c", "d", "e"] {
         fs::create_dir(dir.path().join(p)).unwrap();
         fs::write(dir.path().join(p).join("VERSION"), "1.0.0\n").unwrap();
@@ -42,7 +41,7 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     walk(root, root, &mut files);
     files
 }
-fn cli(root: &Path, args: &[&str]) -> std::process::Output {
+fn cli(root: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_changenote"))
         .current_dir(root)
         .args(args)
@@ -91,19 +90,20 @@ fn public_layout_signatures_and_serialization_remain_compatible() {
         notes: vec!["Same summary".into()],
         note_bumps: vec![Bump::Patch],
     };
-    let _note = changenote::Note {
+    let _note = Note {
         packages: BTreeMap::from([("a".into(), Bump::Patch)]),
         summary: "Same summary".into(),
     };
-    let _detail = changenote::DetailedRelease {
+    let _detail = DetailedRelease {
         release: release.clone(),
         note_paths: vec![".changenote/one.md".into()],
         fixed_group: None,
     };
-    let _add = add as fn(&Path, &str, Vec<String>, Bump, &str) -> anyhow::Result<PathBuf>;
+    let _add =
+        changenote::add as fn(&Path, &str, Vec<String>, Bump, &str) -> anyhow::Result<PathBuf>;
     let _mixed =
         add_with_bumps as fn(&Path, &str, Vec<(String, Bump)>, &str) -> anyhow::Result<PathBuf>;
-    let _status = status as fn(&Path) -> anyhow::Result<Vec<Release>>;
+    let _status = changenote::status as fn(&Path) -> anyhow::Result<Vec<Release>>;
     let dir = project(json!([]));
     note(dir.path(), "one", vec![("a".into(), Bump::Patch)]);
     let expected = serde_json::to_string_pretty(&vec![release]).unwrap();
@@ -111,8 +111,8 @@ fn public_layout_signatures_and_serialization_remain_compatible() {
         String::from_utf8(cli(dir.path(), &["status"]).stdout).unwrap(),
         format!("{expected}\n")
     );
-    version(dir.path()).unwrap();
-    let mut metadata: serde_json::Value = serde_json::from_str(&expected).unwrap();
+    changenote::version(dir.path()).unwrap();
+    let mut metadata: Value = serde_json::from_str(&expected).unwrap();
     metadata[0].as_object_mut().unwrap().remove("notes");
     assert_eq!(
         fs::read_to_string(dir.path().join(".changenote/releases.json")).unwrap(),
@@ -120,8 +120,8 @@ fn public_layout_signatures_and_serialization_remain_compatible() {
     );
     let single = tempfile::tempdir().unwrap();
     changenote::init(single.path(), "a", Version::new(1, 0, 0)).unwrap();
-    add(single.path(), "one", vec!["a".into()], Bump::Patch, "Fix").unwrap();
-    assert_eq!(status(single.path()).unwrap()[0].tag, "v1.0.1");
+    changenote::add(single.path(), "one", vec!["a".into()], Bump::Patch, "Fix").unwrap();
+    assert_eq!(changenote::status(single.path()).unwrap()[0].tag, "v1.0.1");
 }
 
 #[test]
@@ -191,8 +191,8 @@ fn fixed_validation_rejects_invalid_groups_without_writes() {
         let dir = project(groups);
         let before = snapshot(dir.path());
         assert!(load_config(dir.path()).is_err());
-        assert!(status(dir.path()).is_err());
-        assert!(version(dir.path()).is_err());
+        assert!(changenote::status(dir.path()).is_err());
+        assert!(changenote::version(dir.path()).is_err());
         assert_eq!(snapshot(dir.path()), before);
     }
     let dir = project(json!([]));
@@ -240,7 +240,7 @@ fn fixed_groups_use_highest_baseline_and_bump_with_direct_provenance() {
     let before = snapshot(root);
     assert!(version_with_legacy_output(root, true).is_err());
     assert_eq!(snapshot(root), before);
-    version(root).unwrap();
+    changenote::version(root).unwrap();
     assert_eq!(
         fs::read_to_string(root.join("d/CHANGELOG.md")).unwrap(),
         "## 1.0.1\n\nReleased with its fixed version group; no direct changes.\n\n"
@@ -251,7 +251,7 @@ fn fixed_groups_use_highest_baseline_and_bump_with_direct_provenance() {
     );
     assert!(!root.join("e/CHANGELOG.md").exists());
     let before = snapshot(root);
-    assert!(version(root).unwrap().is_empty());
+    assert!(changenote::version(root).unwrap().is_empty());
     assert_eq!(snapshot(root), before);
     git(root, &["init", "-q"]);
     git(root, &["add", "--", "."]);
@@ -283,10 +283,10 @@ fn fixed_groups_manifest_sources_no_notes_and_overflow() {
     }
     fs::write(&path, config.to_string()).unwrap();
     let before = snapshot(root);
-    assert!(version(root).unwrap().is_empty());
+    assert!(changenote::version(root).unwrap().is_empty());
     assert_eq!(snapshot(root), before);
     note(root, "fix", vec![("a".into(), Bump::Patch)]);
-    version(root).unwrap();
+    changenote::version(root).unwrap();
     assert_eq!(
         fs::read_to_string(root.join("b/package.json")).unwrap(),
         "{ \"version\" : \"2.0.1\" }"
@@ -294,11 +294,14 @@ fn fixed_groups_manifest_sources_no_notes_and_overflow() {
     assert!(status_with_note_paths(root).unwrap().is_empty());
     fs::write(root.join("a/VERSION"), format!("1.{}.0\n", u64::MAX)).unwrap();
     note(root, "minor", vec![("a".into(), Bump::Minor)]);
-    assert_eq!(status(root).unwrap()[0].version.to_string(), "2.1.0"); // lower member arithmetic is not the group baseline
+    assert_eq!(
+        changenote::status(root).unwrap()[0].version.to_string(),
+        "2.1.0"
+    ); // lower member arithmetic is not the group baseline
     fs::write(root.join("a/VERSION"), format!("{}.0.0\n", u64::MAX)).unwrap();
     note(root, "major", vec![("a".into(), Bump::Major)]);
     let before = snapshot(root);
-    assert!(version(root).is_err());
+    assert!(changenote::version(root).is_err());
     assert_eq!(snapshot(root), before);
 }
 
@@ -312,7 +315,7 @@ fn inactive_groups_and_noted_independent_packages_stay_independent() {
         "major",
         vec![("a".into(), Bump::Major), ("e".into(), Bump::Patch)],
     );
-    let releases = version(root).unwrap();
+    let releases = changenote::version(root).unwrap();
     assert_eq!(
         releases
             .iter()
@@ -341,7 +344,7 @@ fn inactive_groups_and_noted_independent_packages_stay_independent() {
         fs::write(overflow.path().join("b/VERSION"), text).unwrap();
         note(overflow.path(), "overflow", vec![("a".into(), bump)]);
         let before = snapshot(overflow.path());
-        assert!(version(overflow.path()).is_err());
+        assert!(changenote::version(overflow.path()).is_err());
         assert_eq!(snapshot(overflow.path()), before);
     }
 }
@@ -350,12 +353,13 @@ fn inactive_groups_and_noted_independent_packages_stay_independent() {
 #[cfg(target_os = "linux")]
 #[test]
 fn non_utf8_paths_fail_only_detailed_json_without_writes() {
+    use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;
     let dir = project(json!([]));
     let path = dir
         .path()
         .join(".changenote")
-        .join(std::ffi::OsString::from_vec(b"bad-\xff.md".to_vec()));
+        .join(OsString::from_vec(b"bad-\xff.md".to_vec()));
     fs::write(path, "---\na: patch\n---\nFix\n").unwrap();
     let before = snapshot(dir.path());
     assert!(cli(dir.path(), &["status"]).status.success());
@@ -409,6 +413,6 @@ fn unnamed_add_validates_and_allocates_distinct_files_in_parallel() {
             assert_eq!(name.len(), 37);
         }
     });
-    assert_eq!(status(root).unwrap()[0].notes.len(), 13);
+    assert_eq!(changenote::status(root).unwrap()[0].notes.len(), 13);
     assert!(add_generated(root, vec![], "Fix").is_err());
 }

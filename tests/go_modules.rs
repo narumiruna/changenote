@@ -1,5 +1,8 @@
-use serde_json::json;
-use std::{collections::BTreeMap, fs, path::Path, process::Command};
+use serde_json::{Value, json};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
+use std::process::Command;
 
 fn snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
     fn visit(root: &Path, dir: &Path, files: &mut BTreeMap<String, Vec<u8>>) {
@@ -41,7 +44,7 @@ fn module(root: &Path, directory: &str, suffix: &str, version: &str) {
     fs::write(dir.join("module.go"), "package module\n").unwrap();
 }
 
-fn config(root: &Path, packages: serde_json::Value) {
+fn config(root: &Path, packages: Value) {
     fs::create_dir_all(root.join(".changenote")).unwrap();
     fs::write(
         root.join(".changenote/config.json"),
@@ -106,8 +109,7 @@ fn go_tag_matrix_and_initialization_preserve_sources() {
         ]);
         expected_paths.sort();
         assert_eq!(after.keys().cloned().collect::<Vec<_>>(), expected_paths);
-        let batch: serde_json::Value =
-            serde_json::from_slice(&after[".changenote/releases.json"]).unwrap();
+        let batch: Value = serde_json::from_slice(&after[".changenote/releases.json"]).unwrap();
         assert_eq!(batch[0]["tag"], expected);
         assert_eq!(batch[0].as_object().unwrap().len(), 5);
     }
@@ -152,7 +154,7 @@ fn root_and_nested_modules_release_without_go_or_any_external_tools() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let plan: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(plan[0]["tag"], "v1.2.1");
         assert_eq!(plan[1]["tag"], "sdk/v2.2.1");
         if command == "status" {

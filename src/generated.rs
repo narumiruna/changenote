@@ -1,9 +1,8 @@
-use crate::{Bump, note_content, write_note};
+use crate::note;
+use crate::release::Bump;
 use anyhow::{Result, bail};
-use std::{
-    io::ErrorKind,
-    path::{Path, PathBuf},
-};
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 
 /// Create a note with an OS-random identifier; validation precedes allocation.
 pub fn add_generated(root: &Path, packages: Vec<(String, Bump)>, message: &str) -> Result<PathBuf> {
@@ -17,7 +16,7 @@ pub fn add_generated_with_type(
     message: &str,
     kind: Option<&str>,
 ) -> Result<PathBuf> {
-    let content = note_content(root, packages, message, kind)?;
+    let content = note::note_content(root, packages, message, kind)?;
     allocate(root, &content, || {
         let mut bytes = [0u8; 16];
         getrandom::fill(&mut bytes)
@@ -35,7 +34,7 @@ fn allocate(
     mut name: impl FnMut() -> Result<String>,
 ) -> Result<PathBuf> {
     for _ in 0..8 {
-        match write_note(root, &name()?, content) {
+        match note::write_note(root, &name()?, content) {
             Ok(path) => return Ok(path),
             Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(error.into()),

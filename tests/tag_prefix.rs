@@ -1,8 +1,10 @@
-use serde_json::json;
-use std::{fs, path::Path, process::Command};
+use serde_json::{Value, json};
+use std::fs;
+use std::path::Path;
+use std::process::Command;
 use tempfile::TempDir;
 
-fn fixture(prefix: Option<serde_json::Value>) -> TempDir {
+fn fixture(prefix: Option<Value>) -> TempDir {
     let dir = tempfile::tempdir().unwrap();
     fs::create_dir(dir.path().join(".changenote")).unwrap();
     fs::write(dir.path().join("VERSION"), "1.2.3\n").unwrap();
@@ -286,13 +288,11 @@ fn saved_tag_namespace_conflicts_fail_before_any_tag_creation() {
     let root = dir.path();
     changenote::version(root).unwrap();
     let config_path = root.join(".changenote/config.json");
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     config["packages"]["other"]["tag_prefix"] = json!("v1.2.4/v");
     fs::write(config_path, config.to_string()).unwrap();
     let batch_path = root.join(".changenote/releases.json");
-    let mut batch: serde_json::Value =
-        serde_json::from_slice(&fs::read(&batch_path).unwrap()).unwrap();
+    let mut batch: Value = serde_json::from_slice(&fs::read(&batch_path).unwrap()).unwrap();
     for entry in batch.as_array_mut().unwrap() {
         if entry["package"] == "other" {
             entry["tag"] = json!("v1.2.4/v1.2.4");
@@ -337,8 +337,7 @@ fn saved_tags_must_match_prefix_and_cannot_be_duplicated() {
         let root = dir.path();
         changenote::version(root).unwrap();
         let path = root.join(".changenote/releases.json");
-        let mut saved: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let mut saved: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         if invalid == "duplicate" {
             let entry = saved[0].clone();
             saved.as_array_mut().unwrap().push(entry);

@@ -1,19 +1,23 @@
 //! Bounded note templates. Notes are inserted once and never interpreted.
-use crate::{Bump, Release};
-use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Deserializer, de::Error};
+use crate::release::{Bump, Release};
+use anyhow::{Result, ensure};
+use serde::{Deserialize, Deserializer};
 
 #[derive(Debug)]
 pub(crate) struct NoteTemplate(String);
 
 impl<'de> Deserialize<'de> for NoteTemplate {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        use serde::de::Error;
+
         Self::parse(&String::deserialize(deserializer)?).map_err(D::Error::custom)
     }
 }
 
 impl NoteTemplate {
     fn parse(value: &str) -> Result<Self> {
+        use anyhow::Context;
+
         if value == "{summary}" {
             return Ok(Self(String::new()));
         }

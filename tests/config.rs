@@ -1,14 +1,14 @@
-use changenote::{Bump, Config, add, init, load_config, status, version};
+use changenote::{Bump, Config, load_config};
 use semver::Version;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::fs;
 
 #[test]
 fn init_includes_repository_schema() {
     let dir = tempfile::tempdir().unwrap();
-    init(dir.path(), "pkg-a", Version::new(0, 0, 0)).unwrap();
+    changenote::init(dir.path(), "pkg-a", Version::new(0, 0, 0)).unwrap();
     let config = load_config(dir.path()).unwrap();
-    let schema: serde_json::Value = serde_json::from_str(include_str!("../schema.json")).unwrap();
+    let schema: Value = serde_json::from_str(include_str!("../schema.json")).unwrap();
     assert_eq!(config.schema.as_deref().unwrap(), schema["$id"]);
 }
 
@@ -20,7 +20,7 @@ fn schema_metadata_is_optional_and_does_not_affect_releases() {
         Some("https://example.invalid/schema.json"),
     ] {
         let dir = tempfile::tempdir().unwrap();
-        init(dir.path(), "pkg-a", Version::new(0, 0, 0)).unwrap();
+        changenote::init(dir.path(), "pkg-a", Version::new(0, 0, 0)).unwrap();
         let mut config = json!({
             "packages": {"pkg-a": {"path": ".", "version_file": "VERSION"}}
         });
@@ -33,13 +33,13 @@ fn schema_metadata_is_optional_and_does_not_affect_releases() {
         let loaded = load_config(dir.path()).unwrap();
         assert_eq!(loaded.schema.as_deref(), schema);
         assert_eq!(serde_json::to_value(loaded).unwrap(), config);
-        add(dir.path(), "fix", vec!["pkg-a".into()], Bump::Patch, "Fix").unwrap();
+        changenote::add(dir.path(), "fix", vec!["pkg-a".into()], Bump::Patch, "Fix").unwrap();
         assert_eq!(
-            status(dir.path()).unwrap()[0].version,
+            changenote::status(dir.path()).unwrap()[0].version,
             Version::new(0, 0, 1)
         );
         assert_eq!(
-            version(dir.path()).unwrap()[0].version,
+            changenote::version(dir.path()).unwrap()[0].version,
             Version::new(0, 0, 1)
         );
         assert_eq!(fs::read_to_string(path).unwrap(), content);

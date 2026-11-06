@@ -1,10 +1,8 @@
-use changenote::{Bump, add_with_type, parse_note, status, version};
+use changenote::{Bump, add_with_type, parse_note};
 use serde_json::{Value, json};
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Output},
-};
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Output};
 use tempfile::TempDir;
 
 fn project(sections: Option<Value>) -> TempDir {
@@ -87,10 +85,13 @@ fn configured_sections_order_merge_types_and_keep_bumps_independent() {
         json!({"title":"Maintenance", "notes":["Docs", "Refactor"]})
     );
     assert_eq!(detail[0]["note_sections"].as_array().unwrap().len(), 4);
-    assert_eq!(status(root).unwrap()[0].version.to_string(), "2.0.0");
+    assert_eq!(
+        changenote::status(root).unwrap()[0].version.to_string(),
+        "2.0.0"
+    );
     assert!(!root.join("CHANGELOG.md").exists());
     assert_eq!(fs::read_to_string(root.join("VERSION")).unwrap(), "1.0.0\n");
-    version(root).unwrap();
+    changenote::version(root).unwrap();
     let log = fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
     assert_eq!(
         log,
@@ -107,7 +108,7 @@ fn configured_sections_order_merge_types_and_keep_bumps_independent() {
     let saved: Value =
         serde_json::from_slice(&fs::read(root.join(".changenote/releases.json")).unwrap()).unwrap();
     assert_eq!(saved[0].as_object().unwrap().len(), 5);
-    assert!(status(root).unwrap().is_empty());
+    assert!(changenote::status(root).unwrap().is_empty());
 }
 
 #[test]
@@ -159,7 +160,7 @@ fn typed_notes_preserve_bump_grouping_without_section_config() {
             .unwrap()
             .contains("$type: feat")
     );
-    version(root).unwrap();
+    changenote::version(root).unwrap();
     let log = fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
     assert_eq!(
         log,
@@ -189,7 +190,7 @@ fn invalid_config_and_types_fail_before_writes() {
         json!(null),
     ] {
         configure(root, Some(invalid));
-        assert!(status(root).is_err());
+        assert!(changenote::status(root).is_err());
         assert!(
             add_with_type(
                 root,
@@ -219,8 +220,8 @@ fn invalid_config_and_types_fail_before_writes() {
         "---\ntype: patch\n$type: unknown\n---\nFix",
     )
     .unwrap();
-    assert!(status(root).is_err());
-    assert!(version(root).is_err());
+    assert!(changenote::status(root).is_err());
+    assert!(changenote::version(root).is_err());
     assert_eq!(fs::read_to_string(root.join("VERSION")).unwrap(), "1.0.0\n");
     assert!(!root.join("CHANGELOG.md").exists());
     assert!(!root.join(".changenote/releases.json").exists());
@@ -301,10 +302,10 @@ fn custom_sections_work_with_mixed_bumps_and_fixed_groups() {
         .status
         .success()
     );
-    let releases = status(root).unwrap();
+    let releases = changenote::status(root).unwrap();
     assert_eq!(releases[0].version.to_string(), "1.0.1");
     assert_eq!(releases[1].version.to_string(), "1.1.0");
-    version(root).unwrap();
+    changenote::version(root).unwrap();
     for path in ["CHANGELOG.md", "b/CHANGELOG.md"] {
         assert!(
             fs::read_to_string(root.join(path))
@@ -327,7 +328,7 @@ fn custom_sections_work_with_mixed_bumps_and_fixed_groups() {
     let details: Value = serde_json::from_slice(&details.stdout).unwrap();
     assert_eq!(details[0]["note_sections"], json!([]));
     assert_eq!(details[0]["note_types"], json!([]));
-    version(root).unwrap();
+    changenote::version(root).unwrap();
     assert!(
         fs::read_to_string(root.join("b/CHANGELOG.md"))
             .unwrap()

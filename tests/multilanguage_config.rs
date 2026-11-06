@@ -1,7 +1,9 @@
 //! All six policies in one mixed-language release, without language runtimes.
-use changenote::{Bump, Coverage, add_with_bumps, check_with_coverage, status};
+use changenote::{Bump, Coverage, add_with_bumps, check_with_coverage};
 use serde_json::{Value, json};
-use std::{fs, path::Path, process::Command};
+use std::fs;
+use std::path::Path;
+use std::process::Command;
 
 fn write(root: &Path, path: &str, text: &str) {
     let path = root.join(path);
@@ -118,7 +120,7 @@ fn all_policies_preserve_mixed_sources_and_pause_notes_without_external_tools() 
         }
         let paused = fs::read(root.join(".changenote/paused.md")).unwrap();
         let python = fs::read(root.join("python/pyproject.toml")).unwrap();
-        let plan = status(root).unwrap();
+        let plan = changenote::status(root).unwrap();
         assert_eq!(plan.len(), 4);
         assert_eq!(
             plan.iter()
@@ -171,7 +173,7 @@ fn all_policies_preserve_mixed_sources_and_pause_notes_without_external_tools() 
             "{ \"name\": \"node\", \"version\": \"4.1.0\", \"keep\": 1e+02 }\n"
         );
         assert!(!root.join(".changenote/active.md").exists());
-        assert!(status(root).unwrap().is_empty());
+        assert!(changenote::status(root).unwrap().is_empty());
         let batch: Value =
             serde_json::from_slice(&fs::read(root.join(".changenote/releases.json")).unwrap())
                 .unwrap();

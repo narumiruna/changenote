@@ -1,11 +1,12 @@
-use crate::{load_release_config, notes, plan};
+use crate::config;
+use crate::note;
+use crate::release;
 use anyhow::{Context, Result, ensure};
+use clap::ValueEnum;
 use serde::Serialize;
-use std::{
-    collections::BTreeSet,
-    path::{Component, Path, PathBuf},
-    process::Command,
-};
+use std::collections::BTreeSet;
+use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 
 #[derive(Debug, Serialize)]
 pub struct CheckReport {
@@ -17,7 +18,7 @@ pub struct CheckReport {
     pub passed: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Coverage {
     Pr,
     Package,
@@ -33,7 +34,7 @@ pub struct CoverageReport {
 
 /// Read the optional comparison ref after validating configuration; does not run Git.
 pub fn configured_base_branch(root: &Path) -> Result<Option<String>> {
-    Ok(load_release_config(root)?.base_branch)
+    Ok(config::load_release_config(root)?.base_branch)
 }
 
 /// Check committed changes only, with the original PR-level report.
@@ -75,11 +76,11 @@ pub fn check_with_coverage(
         .is_empty(),
         "check requires a clean working tree; commit tracked and untracked changes first"
     );
-    let release_config = load_release_config(&root)?;
+    let release_config = config::load_release_config(&root)?;
     let config = &release_config.config;
-    let notes = notes(&root, &release_config)?;
+    let notes = note::notes(&root, &release_config)?;
     // Also validate version arithmetic, even for exempt PRs.
-    plan(&root, &release_config, &notes)?;
+    release::plan(&root, &release_config, &notes)?;
     let reference = String::from_utf8(git(
         &root,
         &[
@@ -185,8 +186,10 @@ fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
 
 #[cfg(unix)]
 fn path_from_bytes(bytes: &[u8]) -> Result<PathBuf> {
+    use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
-    Ok(PathBuf::from(std::ffi::OsStr::from_bytes(bytes)))
+
+    Ok(PathBuf::from(OsStr::from_bytes(bytes)))
 }
 #[cfg(not(unix))]
 fn path_from_bytes(bytes: &[u8]) -> Result<PathBuf> {

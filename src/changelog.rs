@@ -1,6 +1,7 @@
 #[cfg(test)]
-use crate::Bump;
-use crate::Release;
+use crate::release::Bump;
+use crate::release::Release;
+use crate::sections::NoteSection;
 use anyhow::{Result, ensure};
 use semver::Version;
 
@@ -14,7 +15,7 @@ pub(crate) fn render_sections(
     release: &Release,
     old: &str,
     legacy: bool,
-    sections: &[crate::NoteSection],
+    sections: &[NoteSection],
 ) -> String {
     let mut entry = format!("## {}\n\n", release.version);
     if legacy {
