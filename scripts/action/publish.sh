@@ -25,6 +25,10 @@ output releases "$(jq -c 'map({package, version, tag})' "$temp/batch.json")"
 # Inspect all remote objects before creating anything. API failure is not absence.
 inspect_publication
 require_publication_ready
+if [[ $legacy_batch == true ]]; then
+  printf 'Legacy batch is already fully published; no remote writes are required.\n'
+  exit 0
+fi
 "$cli" tag
 changed='[]'
 index=0

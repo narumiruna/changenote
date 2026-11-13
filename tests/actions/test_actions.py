@@ -546,11 +546,11 @@ class Actions(unittest.TestCase):
         self.git("push", "origin", "main")
         return release
 
-    def test_old_note_bearing_batch_is_unsupported(self):
+    def test_unpublished_note_bearing_batch_is_unsupported(self):
         self.legacy_release()
         self.later_commit()
         result, _ = self.action("publish", ok=False)
-        self.assertIn("parent release plan", result.stderr)
+        self.assertIn("complete existing publication", result.stderr)
         self.assertEqual(self.state()["releases"], [])
         self.assertEqual(self.git("ls-remote", "--tags", "origin"), "")
 
@@ -562,7 +562,7 @@ class Actions(unittest.TestCase):
         self.git("push", "--force", "origin", "main")
         result, _ = self.action("publish", ok=False)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("parent release plan", result.stderr)
+        self.assertIn("generated release tree", result.stderr)
         self.assertEqual(self.state()["releases"], [])
         self.assertEqual(self.git("ls-remote", "--tags", "origin"), "")
 
@@ -570,7 +570,7 @@ class Actions(unittest.TestCase):
         self.assert_legacy_changelog_rejected("arbitrary changelog")
 
     def test_mixed_output_profiles_are_rejected(self):
-        # Current changelog with legacy JSON is not either complete profile.
+        # Grouped changelog with legacy manifest formatting is not a complete profile.
         self.assert_legacy_changelog_rejected("# Changelog\n\nIntroduction\n\n## 1.0.1\n\n### Patch Changes\n\n- Fix behavior\n\n## 1.0.0\n\nOld\n")
 
     def test_no_batch(self):

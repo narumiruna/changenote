@@ -79,10 +79,10 @@ class Preview(unittest.TestCase):
             "action": "create-tag-and-release", "conflicts": [],
         }])
 
-    def test_old_batch_is_unsupported(self):
+    def test_unpublished_old_batch_is_unsupported(self):
         self.f.legacy_release()
         result, out = self.preview(ok=False)
-        self.assertIn("parent release plan", result.stderr)
+        self.assertIn("complete existing publication", result.stderr)
         self.assertEqual(out["ready"], "false")
 
     def test_existing_matching_tag_and_complete_publication(self):
@@ -200,7 +200,7 @@ class Preview(unittest.TestCase):
         self.f.git("commit", "--amend", "--no-edit")
         self.f.git("push", "--force", "origin", "main")
         result, out = self.preview(ok=False)
-        self.assertIn("parent release plan", result.stderr)
+        self.assertIn("generated release tree", result.stderr)
         self.assertEqual(out["ready"], "false")
 
     def test_api_and_fetch_failures_do_not_claim_readiness(self):
