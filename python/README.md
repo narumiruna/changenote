@@ -13,7 +13,7 @@ uvx changenote --help
 uvx changenote status
 ```
 
-The Release workflow publishes this binary-wrapper distribution after its `PYPI_TOKEN` GitHub Actions secret is configured. To test a local wheel, run from the repository root:
+The Release workflow publishes this binary-wrapper distribution after the PyPI project's GitHub Trusted Publisher is configured. To test a local wheel, run from the repository root:
 
 ```sh
 uv build --out-dir dist/python-binary
@@ -43,7 +43,7 @@ Release notes are collected under `changenote`, with the changelog at root `CHAN
 
 ## Automated publication
 
-The repository's `.github/workflows/release.yml` uses the same core approach as uv: maturin Action builds distributions, and `uv publish` uploads them with the `PYPI_TOKEN` GitHub Actions secret.
+The repository's `.github/workflows/release.yml` uses the same core approach as uv: maturin Action builds distributions, and `uv publish --trusted-publishing always` uploads them with GitHub OIDC. Only the upload job has `id-token: write`; the wheel-build jobs cannot request OIDC tokens. No PyPI token secret is read.
 
 ```mermaid
 flowchart LR
@@ -52,7 +52,7 @@ flowchart LR
     B --> D[Build source archive]
     C --> E[Collect artifacts]
     D --> E
-    E --> F[uv publish with PYPI_TOKEN]
+    E --> F[uv publish with GitHub OIDC]
 ```
 
 Supported wheels:
@@ -68,8 +68,13 @@ Builds use the release commit returned by the publication Action, not the latest
 Before enabling uploads:
 
 1. Create the GitHub environment `pypi`. Restrict deployments to `main`; add required reviewers if approval is needed.
-2. Create a PyPI API token scoped to the existing `changenote` project. Store it as a GitHub Actions secret named `PYPI_TOKEN` in the `pypi` environment or repository.
-3. Confirm that the next release version is unused on PyPI. The upload step passes the secret through `UV_PUBLISH_TOKEN` and disables Trusted Publishing. The upload job has only `contents: read` permission.
+2. In the existing PyPI `changenote` project's **Publishing** settings, add a GitHub [Trusted Publisher](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
+   - Set the owner to `narumiruna`.
+   - Set the repository to `changenote`.
+   - Set the workflow filename to `release.yml`, not its path or display name.
+   - Set the environment to `pypi`.
+3. Complete the publisher configuration before merging the OIDC workflow change. A project owner must verify these account settings; local tests cannot verify them. Uploads fail if the publisher is absent or does not match. There is no token fallback.
+4. Confirm that the next release version is unused on PyPI. Keep environment branch restrictions and any required approvals in place. Remove an old `PYPI_TOKEN` secret after a separately authorized publication confirms the new authentication path.
 
 Ordinary pushes to `main` only manage the Release PR. A confirmed merged managed Release PR starts automatic publication. Manual **Release** dispatch defaults to `operation=manage-pr` and does not publish.
 

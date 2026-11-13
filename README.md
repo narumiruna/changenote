@@ -700,7 +700,7 @@ Manual `operation=retry-publication` skips PR management and retries the latest 
 
 The crates.io job checks the exact `changenote` version before upload. An existing non-yanked version is skipped; its contents are not compared with the release checkout. A yanked version, invalid response, or API error stops the job. Only HTTP 404 permits a new upload. Retry builds can differ from files already on PyPI: `uv publish --check-url` skips matching files but rejects different contents for the same filename. Inspect registry state and resolve conflicts separately; never replace published files automatically.
 
-The workflow builds the CLI instead of installing it and does not push version commits directly to `main`. It publishes the Rust package from the validated release commit to crates.io with `cargo publish --locked` and Trusted Publishing. The `rust-lang/crates-io-auth-action` Action uses GitHub OIDC to obtain a short-lived token. Only the crates.io job has `id-token: write`; its upload step receives the token through the `CARGO_REGISTRY_TOKEN` environment variable. No crates.io token secret is required. It also builds Python distributions from that commit and uploads them to PyPI with `uv publish` and the `PYPI_TOKEN` secret. See `python/README.md` for supported platforms and required PyPI settings. This routing policy is repository-specific; the reusable Actions keep their historical-batch recovery behavior and do not publish to registries.
+The workflow builds the CLI instead of installing it and does not push version commits directly to `main`. It publishes the Rust package from the validated release commit to crates.io with `cargo publish --locked` and Trusted Publishing. The `rust-lang/crates-io-auth-action` Action uses GitHub OIDC to obtain a short-lived token. Only the crates.io and PyPI upload jobs have `id-token: write`. The crates.io upload step receives its short-lived token through the `CARGO_REGISTRY_TOKEN` environment variable. No crates.io token secret is required. The workflow also builds Python distributions from that commit and uploads them to PyPI with `uv publish --trusted-publishing always` and GitHub OIDC, without a PyPI token secret. See `python/README.md` for supported platforms and required PyPI settings. This routing policy is repository-specific; the reusable Actions keep their historical-batch recovery behavior and do not publish to registries.
 
 Configure crates.io publication before the first upload:
 
@@ -769,6 +769,8 @@ The repository contains one Rust Cargo package and one Python distribution that 
 - `examples/github-actions/`: minimal and external-CI consumer workflows.
 - `scripts/action/`, `tests/actions/`: Action scripts and local Git/mock GitHub tests.
 
+Production workflows pin external Actions to full commit SHAs. Dependabot uses a seven-day cooldown for each configured ecosystem. Release PR and publication jobs build the CLI from the workflow commit and use GitHub's `$/` self-repository references for Action code from that same commit. Publication still selects the release from the remote base branch.
+
 Run checks from the repository root:
 
 ```sh
@@ -781,12 +783,15 @@ cargo run --locked -p changenote -- status
 
 The Rust package and executable names are `changenote`, so `cargo run -- status` works from the repository root. Rust build outputs go to `target/`.
 
-For the Actions, install `gh`, `jq`, ShellCheck, and actionlint, then run:
+For the Actions, install `gh`, `jq`, ShellCheck, actionlint, and zizmor, then run:
 
 ```sh
 for script in scripts/action/*.sh; do bash -n "$script"; done
 shellcheck -x scripts/action/*.sh
-actionlint
+# actionlint does not yet parse GitHub's $/ and $/preview references.
+# Keep this exact-message filter until upstream support is available.
+actionlint -ignore '^specifying action "\$/(preview)?" in invalid format because ref is missing\. available formats are "\{owner\}/\{repo\}@\{ref\}" or "\{owner\}/\{repo\}/\{path\}@\{ref\}"$'
+zizmor --offline .github/
 cargo build --locked
 uv run --no-project python -m unittest discover -s tests/actions -v
 uv run --no-project --with pyyaml python -m unittest discover -s tests/action_metadata -v
@@ -808,7 +813,7 @@ uvx --isolated --no-index --find-links dist/python-binary changenote --help
 
 The Python distribution `changenote`, with wrapper sources in `python/changenote`, packages the Rust executable using maturin `bin` bindings, like uv. It does not reimplement the CLI in Python. Compatible wheels require no Rust toolchain at runtime; source builds require Rust and Cargo. The optional `python -m changenote` runner invokes the installed executable.
 
-The existing [changenote PyPI project](https://pypi.org/project/changenote/) is the publication target. The Release workflow builds platform wheels with maturin Action and publishes with `uv publish`. Configure its `PYPI_TOKEN` GitHub Actions secret before the first upload. After a successful publication, users on supported platforms can run `uvx changenote status`. See `python/README.md`.
+The existing [changenote PyPI project](https://pypi.org/project/changenote/) is the publication target. The Release workflow builds platform wheels with maturin Action and publishes with `uv publish` and Trusted Publishing. Before merging the OIDC workflow change, the PyPI project owner must configure a GitHub Trusted Publisher for owner `narumiruna`, repository `changenote`, workflow filename `release.yml`, and environment `pypi`. Uploads fail if this trust is absent or does not match. After a successful publication, users on supported platforms can run `uvx changenote status`. See `python/README.md`.
 
 The Rust CLI and Python distribution share the `changenote` release plan and root `CHANGELOG.md`; the current single release package uses `v<version>` tags. Python has no independent version file or bump. Its manifest uses a dynamic version from root `Cargo.toml`, so Python wheel metadata and the included Rust CLI version match. The crates.io and PyPI jobs validate `Cargo.toml` against the saved release batch and check the local package version in `Cargo.lock`. Older releases configured with `VERSION` receive build-only Cargo version synchronization in a disposable checkout. The wheel check uses the validated version, not a separate version file. For manual publication, update the Cargo version and lockfile first.
 
