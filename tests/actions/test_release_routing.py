@@ -263,6 +263,20 @@ class ReleaseRouting(unittest.TestCase):
                 "refs/heads/main",
             )
 
+    def test_non_main_base_is_used_for_ref_and_managed_pr_identity(self):
+        release = self.fixture.release()
+        pr = self.managed(release)
+        pr["base"]["ref"] = "stable"
+        pr["head"]["ref"] = "narumi/chore/changenote-release-stable"
+        self.associate(release, [pr])
+        event = dict(before=self.before, after=release, forced=False, deleted=False)
+        original = routing.command
+        with patch.object(routing, "command", side_effect=lambda *args: self.fixture.run_cmd(list(args)).stdout.strip()):
+            result = routing.route("push", event, "test/repo", "refs/heads/stable", "stable")
+        self.assertEqual(result["release-commit"], release)
+        self.assertEqual(result["publish"], "true")
+        self.assertEqual(routing.command, original)
+
     def test_preview_check_for_queued_runs_and_manual_no_batch(self):
         routing.check_preview("old", "old", "true")
         routing.check_preview("", "latest", "true")

@@ -1,4 +1,4 @@
-"""Read-only routing for this repository's Release workflow."""
+"""Read-only managed-merge routing shared by Actions and the Release workflow."""
 
 import json
 import os
@@ -15,9 +15,9 @@ def command(*args):
     return subprocess.check_output(args, text=True).strip()
 
 
-def route(event_name, event, repository, ref):
+def route(event_name, event, repository, ref, base="main"):
     result = {"manage-pr": "false", "publish": "false", "release-commit": ""}
-    if ref != "refs/heads/main":
+    if ref != f"refs/heads/{base}":
         return result
     if event_name == "workflow_dispatch":
         operation = event.get("inputs", {}).get("operation", "manage-pr")
@@ -85,10 +85,10 @@ def route(event_name, event, repository, ref):
             pull.get("state") == "closed"
             and pull.get("merged_at")
             and pull.get("merge_commit_sha") == release
-            and pull.get("base", {}).get("ref") == "main"
+            and pull.get("base", {}).get("ref") == base
             and pull.get("base", {}).get("repo", {}).get("full_name") == repository
             and pull.get("head", {}).get("ref")
-            == "narumi/chore/changenote-release-main"
+            == f"narumi/chore/changenote-release-{base}"
             and (pull.get("head", {}).get("repo") or {}).get("full_name") == repository
             and (pull.get("body") or "").startswith(MARKER)
         )
@@ -117,12 +117,17 @@ def main():
     repository = os.environ["GITHUB_REPOSITORY"]
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Invalid repository")
-    result = route(
-        os.environ["GITHUB_EVENT_NAME"],
-        json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text()),
-        repository,
-        os.environ["GITHUB_REF"],
-    )
+    event_name = os.environ["GITHUB_EVENT_NAME"]
+    event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+    base = "main"
+    if sys.argv[1:] == ["managed-merge"]:
+        base = os.environ["INPUT_BASE_BRANCH"]
+        # The root Action never authorizes commands through manual inputs.
+        if event_name == "workflow_dispatch":
+            event = {"inputs": {"operation": "manage-pr"}}
+    elif sys.argv[1:]:
+        raise ValueError("Unknown routing operation")
+    result = route(event_name, event, repository, os.environ["GITHUB_REF"], base)
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         for key, value in result.items():
             output.write(f"{key}={value}\n")

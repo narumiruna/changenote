@@ -41,7 +41,7 @@ if args[0] == "api":
     if endpoint == "repos/test/repo":
         repo = {
             "clone_url": state["remote"],
-            "default_branch": "main",
+            "default_branch": state.get("default_branch", "main"),
         }
         if not state.get("omit_permissions"):
             repo["permissions"] = {"push": not state.get("no_write")}

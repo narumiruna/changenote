@@ -15,6 +15,7 @@ if [[ -n $expected ]]; then
   fi
 fi
 verify_publication_batch
+prepare_publication_notes
 # Preserve the positional guard, including an explicitly empty argument.
 if [[ ( $# -gt 0 && $release != "$1" ) || ( -n $expected && $release != "$expected" ) ]]; then
   fail 'Release batch changed after preview; use an explicit retry.'

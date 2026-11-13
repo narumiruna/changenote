@@ -33,10 +33,15 @@ class ReleaseMetadata(unittest.TestCase):
         })
         for key, value in self.action["outputs"].items():
             self.assertEqual(value["value"], "${{ steps.release.outputs." + key + " }}")
-        # This Action is opt-in. The original entry point still manages only PRs.
+        # Built-in publication remains opt-in through /release. Root commands
+        # are independently opt-in and retain the original PR outputs.
         root = yaml.load((ROOT / "action.yml").read_text(), Loader=yaml.BaseLoader)
-        self.assertEqual(set(root["outputs"]), {"has-notes", "pr-number", "pr-operation"})
-        self.assertIn("version.sh", root["runs"]["steps"][0]["run"])
+        self.assertEqual(set(root["outputs"]), {
+            "has-notes", "pr-number", "pr-operation", "release-commit", "releases",
+        })
+        self.assertEqual(root["inputs"]["publish-command"]["default"], "")
+        self.assertEqual(root["inputs"]["release-command"]["default"], "")
+        self.assertIn("lifecycle.sh", root["runs"]["steps"][-1]["run"])
 
     def test_setup_order_and_cache_hit_activation(self):
         labels = [step.get("name", step.get("uses")) for step in self.steps]

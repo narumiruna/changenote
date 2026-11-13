@@ -69,7 +69,7 @@ class ReleaseExamples(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("actionlint"), "actionlint is not on PATH")
     def test_workflows_lint_with_consumer_workflow_contracts(self):
-        for name in ("release.yml", "logice-release.yml"):
+        for name in ("release.yml", "logice-release.yml", "command-hooks.yml"):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 workflows = root / ".github/workflows"

@@ -278,7 +278,7 @@ class Actions(unittest.TestCase):
         self.assertTrue(body.startswith("<!-- changenote-release-pr -->"))
         self.assertIn("[changenote release](https://github.com/narumiruna/changenote)", body)
         self.assertIn("New change notes on `main` update this PR.", body)
-        self.assertIn("registry publication requires a separate workflow", body)
+        self.assertIn("registry publication uses caller-owned commands or workflows", body)
         self.assertIn(
             "# Releases\n\n## other@2.1.0\n\n### Minor Changes\n\n"
             "- Shared change\n  \n  Second paragraph\n\n"

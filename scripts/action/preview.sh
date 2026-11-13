@@ -9,6 +9,7 @@ output releases '[]'
 output publication-plan '[]'
 setup_readonly
 verify_publication_batch
+prepare_publication_notes
 if [[ -z $release ]]; then
   output ready true
   printf 'No release batch to publish.\n'
