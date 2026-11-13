@@ -17,6 +17,73 @@ def read_yaml(path):
 
 
 class Metadata(unittest.TestCase):
+    def test_workflow_action_pins_and_credentials(self):
+        for path in (ROOT / ".github/workflows").glob("*.yml"):
+            for job in read_yaml(path)["jobs"].values():
+                for step in job.get("steps", []):
+                    uses = step.get("uses")
+                    if not uses or uses.startswith("$/"):
+                        continue
+                    with self.subTest(workflow=path.name, action=uses):
+                        self.assertRegex(uses, r"^[^@]+@[0-9a-f]{40}$")
+                        if uses.startswith("actions/checkout@"):
+                            self.assertEqual(step["with"]["persist-credentials"], "false")
+                        if uses.startswith("dtolnay/rust-toolchain@"):
+                            self.assertEqual(step["with"]["toolchain"], "stable")
+
+    def test_dependabot_cooldowns(self):
+        updates = read_yaml(ROOT / ".github/dependabot.yml")["updates"]
+        self.assertEqual(
+            {update["package-ecosystem"] for update in updates},
+            {"github-actions", "cargo", "uv", "docker"},
+        )
+        for update in updates:
+            with self.subTest(ecosystem=update["package-ecosystem"]):
+                self.assertGreaterEqual(int(update["cooldown"]["default-days"]), 7)
+
+    def test_self_repository_paths_and_inputs(self):
+        jobs = read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]
+        references = []
+        for name in ("release", "publish"):
+            self.assertEqual(jobs[name]["steps"][0]["with"]["ref"], "${{ github.sha }}")
+            for step in jobs[name]["steps"]:
+                uses = step.get("uses", "")
+                if not uses.startswith("$/"):
+                    continue
+                references.append(uses)
+                metadata = read_yaml(ROOT / uses.removeprefix("$/") / "action.yml")
+                supplied = set(step.get("with", {}))
+                inputs = metadata["inputs"]
+                self.assertTrue(supplied.issubset(inputs))
+                required = {
+                    key for key, value in inputs.items()
+                    if value.get("required") == "true" and "default" not in value
+                }
+                self.assertTrue(required.issubset(supplied))
+        self.assertEqual(references, ["$/", "$/preview"])
+
+    def test_actionlint_filter_only_matches_known_self_repository_errors(self):
+        jobs = read_yaml(ROOT / ".github/workflows/ci.yml")["jobs"]
+        script = next(
+            step["run"] for step in jobs["actions"]["steps"]
+            if step.get("name") == "Check shell scripts and workflows"
+        )
+        pattern = re.search(r"-ignore '([^']+)'", script).group(1)
+
+        def diagnostic(action, reason="ref is missing"):
+            return (
+                f'specifying action "{action}" in invalid format because {reason}. '
+                'available formats are "{owner}/{repo}@{ref}" or '
+                '"{owner}/{repo}/{path}@{ref}"'
+            )
+
+        for action in ("$/", "$/preview"):
+            self.assertRegex(diagnostic(action), pattern)
+            self.assertNotRegex(diagnostic(action, "owner is missing"), pattern)
+            self.assertNotRegex(diagnostic(action) + " extra error", pattern)
+        for action in ("$/publish", "./preview", "actions/checkout"):
+            self.assertNotRegex(diagnostic(action), pattern)
+
     def test_inputs_outputs_and_composite_paths(self):
         fixture = test_actions.Actions("test_no_batch")
         fixture.setUp()
@@ -122,11 +189,11 @@ class Metadata(unittest.TestCase):
         for name in ("release", "publish", "crates-io", "wheels"):
             job = workflow["jobs"][name]
             self.assertEqual(job["steps"][0]["with"]["persist-credentials"], "false")
-        self.assertEqual(workflow["jobs"]["release"]["steps"][-1]["uses"], "./")
+        self.assertEqual(workflow["jobs"]["release"]["steps"][-1]["uses"], "$/")
         publish_steps = workflow["jobs"]["publish"]["steps"]
         self.assertEqual(publish_steps[-1]["run"], 'bash scripts/action/publish.sh "$EXPECTED_RELEASE_COMMIT"')
         self.assertEqual(publish_steps[-1]["env"]["EXPECTED_RELEASE_COMMIT"], "${{ steps.preview.outputs.release-commit }}")
-        self.assertEqual(publish_steps[-3]["uses"], "./preview")
+        self.assertEqual(publish_steps[-3]["uses"], "$/preview")
         self.assertEqual(publish_steps[-2]["env"]["EXPECTED_RELEASE_COMMIT"], "${{ needs.route.outputs.release-commit }}")
         self.assertIn("check-preview", publish_steps[-2]["run"])
         ci = read_yaml(ROOT / ".github/workflows/ci.yml")
@@ -200,15 +267,14 @@ class Metadata(unittest.TestCase):
         pypi = jobs["pypi"]
         self.assertEqual(pypi["needs"], ["publish", "wheels"])
         self.assertIn("needs.wheels.result == 'success'", pypi["if"])
-        self.assertEqual(pypi["permissions"], {"contents": "read"})
+        self.assertEqual(pypi["permissions"], {"contents": "read", "id-token": "write"})
         self.assertEqual(pypi["environment"]["name"], "pypi")
         self.assertEqual(pypi["steps"][0]["with"]["pattern"], "python-*")
         upload = pypi["steps"][-1]
-        self.assertEqual(
-            upload["env"], {"UV_PUBLISH_TOKEN": "${{ secrets.PYPI_TOKEN }}"}
-        )
+        self.assertNotIn("env", upload)
+        self.assertNotIn("PYPI_TOKEN", (ROOT / ".github/workflows/release.yml").read_text())
         command = upload["run"]
-        self.assertIn("uv publish --trusted-publishing never", command)
+        self.assertIn("uv publish --trusted-publishing always", command)
         self.assertIn("--check-url https://pypi.org/simple/", command)
 
     def test_crates_io_uses_validated_commit_and_retries(self):
@@ -220,7 +286,7 @@ class Metadata(unittest.TestCase):
         self.assertNotIn("outputs.published", crate["if"])
         self.assertEqual(crate["permissions"], {"contents": "read", "id-token": "write"})
         for name, job in jobs.items():
-            if name != "crates-io":
+            if name not in {"crates-io", "pypi"}:
                 self.assertNotIn("id-token", job.get("permissions", {}))
         self.assertEqual(crate["concurrency"], {
             "group": "changenote-crates-io-main", "cancel-in-progress": "false",
