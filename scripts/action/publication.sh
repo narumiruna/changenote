@@ -55,6 +55,7 @@ find_publication_batch() {
 }
 
 verify_publication_batch() {
+  legacy_batch=false
   find_publication_batch
   [[ -n $release ]] || return 0
   checkout_work "$parent"
@@ -63,22 +64,35 @@ verify_publication_batch() {
   select_publication_notes
   hide_pending_notes
   "$cli" status > "$temp/expected.json"
-  jq -e --slurpfile expected "$temp/expected.json" '. == ($expected[0] | map(del(.notes)))' "$temp/batch.json" >/dev/null || fail 'Batch does not match the parent release plan.'
-  local generated=''
-  if "$cli" version > "$temp/applied.json"; then
-    restore_pending_notes
-    stage_release "$temp/batch.json"
-    generated=$(git write-tree)
+  if jq -e --slurpfile expected "$temp/expected.json" '. == ($expected[0] | map(del(.notes)))' "$temp/batch.json" >/dev/null; then
+    legacy_batch=false
+  elif jq -e --slurpfile expected "$temp/expected.json" '. == $expected[0]' "$temp/batch.json" >/dev/null; then
+    legacy_batch=true
+  else
+    fail 'Batch does not match the parent release plan.'
   fi
-  if [[ $generated != "$(git rev-parse "$release^{tree}")" ]]; then
-    # Earlier releases did not refresh lockfiles. Accept only a complete profile.
+  local generated='' profile expected_tree
+  local profiles=('' --no-lockfiles) options=()
+  if [[ $legacy_batch == true ]]; then profiles+=(--legacy-output); fi
+  expected_tree=$(git rev-parse "$release^{tree}")
+  for profile in "${profiles[@]}"; do
+    # Accept only complete known writer profiles, never mixed release output.
     git reset --hard "$parent"
     hide_pending_notes
-    "$cli" version --no-lockfiles > "$temp/applied.json"
-    restore_pending_notes
-    stage_release "$temp/batch.json"
-    [[ $(git write-tree) == "$(git rev-parse "$release^{tree}")" ]] || fail 'Release commit contains changes beyond the generated release tree.'
-  fi
+    options=()
+    if [[ -n $profile ]]; then options+=("$profile"); fi
+    if "$cli" version "${options[@]}" > "$temp/applied.json"; then
+      if [[ $legacy_batch == true ]]; then
+        # Rebuild the old batch from validated parent notes, not saved bytes.
+        cp -- "$temp/expected.json" .changenote/releases.json
+      fi
+      restore_pending_notes
+      stage_release "$temp/batch.json"
+      generated=$(git write-tree)
+      if [[ $generated == "$expected_tree" ]]; then break; fi
+    fi
+  done
+  [[ $generated == "$expected_tree" ]] || fail 'Release commit contains changes beyond the generated release tree.'
   git reset --hard "$release"
   # Validate every body before any remote writes, including later batch members.
   local item package version index=0
@@ -127,12 +141,17 @@ inspect_publication() {
       "$temp/publication-plan.json" > "$temp/next-plan.json"
     cp -- "$temp/next-plan.json" "$temp/publication-plan.json"
   done < <(jq -c '.[]' "$temp/batch.json")
-  ready=$(jq 'all(.[]; .action != "conflict")' "$temp/publication-plan.json")
+  ready=$(jq --argjson legacy "$legacy_batch" \
+    'all(.[]; .action != "conflict" and ($legacy == false or .action == "none"))' \
+    "$temp/publication-plan.json")
 }
 
 require_publication_ready() {
   if [[ $ready != true ]]; then
     jq -r '.[].conflicts[]' "$temp/publication-plan.json" >&2
+    if [[ $legacy_batch == true ]]; then
+      fail 'Legacy note-bearing batches require complete existing publication. Use matching old tooling for missing releases.'
+    fi
     fail 'Publication conflicts require manual inspection.'
   fi
 }
