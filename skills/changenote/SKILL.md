@@ -209,71 +209,179 @@ Do not move existing tags, push, create GitHub Releases, or publish artifacts wi
 - Identify the selected base branch, existing Action pins and CLI versions, package-manager requirements, and publication policy.
 - Use the [GitHub Actions guide](https://github.com/changenote/action/blob/main/docs/github-actions.md) for setup and operations.
 - Read documentation and Action metadata at the selected revision before changing inputs; `main` can differ from a pinned revision.
-- Use the [migration guide](https://github.com/changenote/action/blob/main/docs/migration.md) when replacing old `changenote/changenote` Action paths.
+- Use the [migration guide](https://github.com/changenote/action/blob/main/docs/migration.md) for repository moves, removed entry points, root inputs, and managed branch names.
+- For an authorized upgrade, update the reviewed Action SHA, entry points, inputs, preparation scopes, and workflow contract tests together.
+  - Keep the current pin's interface until the upgrade is in scope; do not apply new inputs to an older revision.
 
-### Select the Entry Point
+### Default to the Root Action
 
-| Goal | Entry point | CLI setup |
+Use `changenote/action` and its public inputs as the default for release workflows.
+First map the requested behavior to root inputs; use standalone Actions only for a concrete requirement root cannot satisfy.
+Root installs the CLI and prepares supported project tools and caches by default; do not add setup or preparation Actions for a single root call.
+
+| Requirement | Root inputs |
+| --- | --- |
+| Select the CLI | `version`; use `cli-path` only when a trusted same-job Setup output is already available. |
+| Select the release branch | `base-branch`; empty uses the repository default branch. |
+| Configure the release commit and PR | `commit-message`, `pr-title`, `pr-draft`. |
+| Configure project preparation | `prepare`, `node-version`, `npm-version`, `rust-toolchain`, `uv-version`. |
+| Publish Git tags or GitHub Releases | `push-git-tags`, `create-github-releases`. |
+| Run project-owned build, test, or publication steps | `publish-script`, `release-script`. |
+| Select the management token | `github-token`. |
+
+Root has no `operation` input; GitHub may only warn about an undeclared input instead of failing the workflow.
+With neither script nor enabled publication controls, it only manages the PR.
+Do not enable publication scripts or built-in publication unless the user requests that behavior.
+
+| `push-git-tags` | `create-github-releases` | Built-in work |
 | --- | --- | --- |
-| Configure the complete release workflow or verified project scripts | `changenote/action` | Installs or reuses the CLI; built-in operations prepare project tools and caches. |
-| Install one trusted CLI for reuse within a job | `changenote/action/setup` | Returns `cli-path` and the exact installed `version`. |
-| Prepare project tools and offline lockfile caches only | `changenote/action/prepare` | Installs or reuses the CLI; creates no PRs, tags, or Releases. |
-| Manage the Release PR only | `changenote/action/manage-pr` | Installs or reuses the CLI; caller prepares project tools. |
-| Return a verified batch and its GitHub publication state | `changenote/action/select` | Installs or reuses the CLI; caller prepares project tools. |
-| Check contributor PR notes without writes | `changenote/action/check` | Installs or reuses the CLI. |
-| Publish tags and GitHub Releases for a validated batch | `changenote/action/publish` | Installs or reuses the CLI; caller prepares project tools. |
-| Keep an existing built-in release workflow | `changenote/action/release` | Compatibility entry point for root's built-in operations. |
-| Keep an existing publication preview | `changenote/action/preview` | Compatibility name for the same inspection as `/select`. |
+| `'false'` | `'false'` | None; both controls default to this value. |
+| `'true'` | `'false'` | Tags only. |
+| `'true'` | `'true'` | Tags and GitHub Releases. |
+| `'false'` | `'true'` | Invalid, even when tags already exist. |
 
-Use the [lower-level reference](https://github.com/changenote/action/blob/main/docs/github-actions-reference.md) for separate operations and recovery.
-Root defaults to `operation: hooks`, preserving managed-merge scripts without built-in publication.
-In `hooks`, the root Action does not publish when both `publish-script` and `release-script` are absent.
-Explicitly choose `operation: auto` for root's built-in PR management and GitHub publication.
-Nonempty script inputs are rejected outside `hooks`; use separate Actions when CI or approvals divide the stages.
-With both scripts, `publish-script` runs first; a failure prevents `release-script`.
-The `/release` Action has no script inputs.
+Set these inputs to literal `'true'` or `'false'`.
 Built-in publication creates Git tags and GitHub Releases, not registry uploads.
+`published` and `published-packages` describe only this run's built-in writes, not script or registry completion.
 
-### Configure the Workflow
+#### Minimal Root Workflow
+
+Start with this PR-only template when creating a release workflow.
+The repository must have committed package configuration and version files.
+Replace both SHA placeholders with reviewed full commit SHAs and replace `main` with the selected base branch throughout.
+The template is not ready to run until those placeholders are resolved.
+
+```yaml
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: changenote-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<full-checkout-commit-sha>
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: changenote/action@<full-action-commit-sha>
+        with:
+          base-branch: main
+```
+
+### Configure the Root Workflow
 
 - Make requested local workflow edits without dispatching the workflow.
-- Do not enable automatic publication unless the user requests it.
-  - Use `/manage-pr` or root with `operation: manage-pr` for PR-only setup.
-  - Root defaults to `hooks`; its `auto` operation is explicit.
-  - The `/release` compatibility path still defaults to `auto`.
-  - `auto` can publish the latest incomplete validated batch on base-branch pushes, even after unrelated later commits.
-  - On manual events, `auto` only manages the PR; `retry-publication` explicitly retries built-in publication.
+- Preserve the requested publication behavior.
+  - Without scripts, enabled root publication controls can complete an older validated batch on later base-branch pushes.
+  - Either nonblank script limits follow-up work to a qualifying new managed merge in the triggering push range.
+    - A later push can replace a pending managed-merge run in the template's concurrency group and skip its scripts.
+    - Before enabling scripts with this setup, require durable routing or a recovery path for that merge.
+  - Manual root invocations only manage the PR, regardless of scripts or publication controls; they cannot recover skipped scripts.
+  - Workflow menu choices such as `retry-publication` are caller-owned routing, not root operations; never pass them to root.
 - Pin Actions to reviewed full commit SHAs from `changenote/action`, not CLI repository SHAs.
   - Pin other external Actions to reviewed full SHAs as well.
   - If a reviewed SHA is unavailable, leave a clearly marked template and report that it is not ready to run.
-- Select compatible CLI and Action versions when upgrading release tooling; their release versions are independent.
-  - All current entry points accept `version`; standalone operation Actions install a prebuilt CLI wheel from PyPI with uv outside the consumer checkout.
-  - To reuse one installation, pass the trusted same-job `cli-path` from `/setup`; do not accept an executable path from contributor data.
-  - An exact `version` must match the reused CLI.
-  - With `latest` and an explicit path, reuse validates the installed stable version without resolving PyPI again.
-  - Do not transfer executable paths between jobs.
-  - `version` defaults to `latest`, the latest stable published CLI; pinning the Action SHA does not pin this version.
-  - For repeatable runs, use the same exact stable CLI version across PR generation, selection, and publication.
+- Select compatible CLI and Action versions; their release versions are independent.
+  - Root installs a prebuilt CLI wheel from PyPI with uv outside the consumer checkout.
+  - `version` defaults to `latest`; pinning the Action SHA does not pin the CLI version.
+  - For repeatable runs, use the same exact stable CLI version for PR generation and release replay.
   - Exact versions require a leading `v`; bare versions, ranges, Git revisions, URLs, and prereleases are rejected.
-  - Older Action revisions can require caller installation or use a fixed CLI source pin; follow their metadata instead of assuming `version` exists.
-  - Never build the CLI from contributor code.
-- Use Linux runners and restrict release management and publication to the selected base branch's push and manual events.
-- Set checkout `persist-credentials: false` and configure caller concurrency with `cancel-in-progress: false`.
+  - A reused `cli-path` must come from trusted same-job `/setup` output, never contributor data or another job.
+  - An exact `version` must match the reused executable; `latest` with a trusted path validates its stable version without resolving PyPI again.
+  - Older revisions can require caller installation or a fixed CLI source pin; follow their metadata instead of assuming current inputs exist.
+  - Never build the trusted CLI from contributor code.
+- Use Linux runners and restrict root to the selected base branch's push and manual events, not contributor PR events.
+- Set checkout `persist-credentials: false` and caller concurrency with `cancel-in-progress: false`.
   - Concurrency is not a durable queue; newer pending runs can replace older pending runs.
-- Give each job only the permissions it needs.
-  - PR management needs `contents: write` and `pull-requests: write`.
-  - Selection, preview, and contributor checks need only `contents: read`.
-  - Built-in tag and GitHub Release publication needs `contents: write`.
+- Give the root job `contents: write` and `pull-requests: write` for PR management.
   - Grant `id-token: write` only when a separately configured publication method needs OIDC.
-- Record required repository settings, branch-rule changes, and token setup for the maintainer; do not change them without authorization or request secrets in chat.
+- Record required repository settings, branch rules, and token setup for the maintainer; do not change them without authorization or request secrets in chat.
   - The repository must permit Actions to create PRs and the bot to push the managed branch.
   - When generated PRs must trigger CI, use an authorized GitHub App token or PAT through `github-token`; the default `GITHUB_TOKEN` does not trigger PR workflows.
-- Keep changelog output enabled for built-in publication.
-- Prepare the same package-manager versions and required caches for PR generation and release replay.
-  - Root's built-in operations and `/release` prepare supported lockfile caches unless `prepare: 'false'` selects caller-owned preparation.
-  - For composed workflows, run `/prepare` with the matching environment scope before `/manage-pr`, `/select`, or `/publish`.
-  - The `hooks` operation retains caller-owned project setup.
-  - Preparation for a saved batch includes only consumed notes, not unrelated notes retained for the next release.
+- Check the reserved release-branch name at the selected Action revision.
+  - The slash-separated format is `changenote-release/<base-branch>`; the suffix is the selected base branch or repository default, not a fixed `main`.
+  - When adopting this format, update branch rules and head-branch filters, and finish publication for or close the previous Release PR.
+  - Existing PRs and branches are not automatically renamed or removed; update custom managed-merge routing with the Action pin.
+- Set `pr-draft` only when requested.
+  - Empty creates ready PRs; `create` drafts new PRs; both preserve draft status on updates.
+  - `always` also converts managed ready PRs to draft on updates, including unchanged generated trees.
+- Keep changelog output enabled when root creates GitHub Releases; tags-only and script-only work can use disabled changelog output.
+- Prepare consistent package-manager versions and required caches for PR generation and release replay.
+  - Root defaults to `prepare: 'true'` for every invocation, including PR-only and script calls.
+  - Set `prepare: 'false'` after caller-owned preparation; this does not skip required CLI or router setup.
+  - Root prepares supported lockfile tools and caches, not arbitrary build dependencies.
+  - Saved-batch preparation includes only consumed notes, not unrelated notes retained for the next release.
+
+### Root Project Scripts
+
+Keep tests, builds, and registry publication in `publish-script` when its verified-merge execution satisfies the requested workflow.
+Root scripts require a new batch-changing first-parent commit and exactly one associated merged managed PR in the triggering push range.
+Verify the reserved same-repository head branch, selected base, body marker, and matching merge commit; titles and commit messages are not authority.
+The execution order is `publish-script`, enabled built-in tags and Releases, then `release-script`; a failure prevents later steps without undoing earlier writes.
+Scripts do not enable built-in publication; keep both controls false when a script owns tags or Releases.
+Scripts share a temporary worktree at the verified release commit, not the caller's checkout; earlier untracked build files are not copied.
+Read `CHANGENOTE_RELEASE_COMMIT` and the per-package `CHANGENOTE_RELEASES` JSON array inside scripts; do not change HEAD.
+For multiple packages, select the intended package explicitly; do not assume one global version or blindly use the first entry.
+The caller supplies trusted scripts, tools, artifacts, credentials, and tests before upload.
+The management token is not automatically exported to scripts; provide needed credentials explicitly through the step's `env`.
+Scripts run with job authority, not in a security sandbox; never build their text from contributor data.
+Metadata verification and `ready` are not proof that project CI passed or permission to publish.
+
+### Compose Only When Root Cannot Meet the Requirement
+
+Before introducing standalone Actions, identify the requirement root cannot satisfy and add only the entry points needed.
+Do not split merely because tests or approvals are required.
+Inline tests can run in a root script, and an approval that may cover the entire root job does not require splitting.
+Use standalone Actions when the task requires:
+
+1. Read-only publication inspection or independent contributor PR checks.
+2. Independent CI jobs, platform-specific runners, or a separate approval between release selection and publication.
+3. Different permissions or execution times for PR management and publication.
+4. An independent full-publication retry, since a manual root invocation only manages PRs.
+
+For the standalone operations below, use the [lower-level reference](https://github.com/changenote/action/blob/main/docs/github-actions-reference.md).
+
+| Required operation | Standalone entry point |
+| --- | --- |
+| Run PR management independently | `changenote/action/manage-pr` |
+| Inspect the verified batch without writes | `changenote/action/inspect` |
+| Check contributor PR notes without writes | `changenote/action/check` |
+| Publish tags and GitHub Releases for a validated batch | `changenote/action/publish` |
+| Reuse one trusted CLI across necessary operations in a job | `changenote/action/setup` |
+| Prepare missing project tools and offline caches for those operations | `changenote/action/prepare` |
+
+Root plus these six standalone entry points form the current API.
+The former `/release`, `/select`, and `/preview` paths are removed, not compatibility aliases.
+Standalone operations install the selected CLI by default; `/setup` is optional for same-job reuse, not a mandatory first step.
+Standalone `/manage-pr`, `/inspect`, and `/publish` do not prepare project tools implicitly.
+Add `/prepare` only when the operation needs supported tools or caches that caller-owned setup has not already prepared.
+`/prepare` uses `operation` only as an environment scope: `manage-pr` for pending notes, `inspect` or `publish` for the saved batch, and `auto` for both.
+The `publish` preparation scope requires the selected `expected-release-commit`; other scopes reject that guard.
+Preparation does not execute the named release operation.
+Use the same CLI and project tool versions across composed jobs; do not transfer executable paths between jobs.
+Inspection, preparation, and contributor checks need only `contents: read`.
+Publication needs `contents: write`; PR management needs both `contents: write` and `pull-requests: write`.
+Standalone `/inspect` and `/publish` always use full-publication checks and require enabled changelog output; they are not selective tags-only checks.
+
+#### Independent CI and Publication
+
+When a separate job must validate the release commit, use `/inspect`, CI at that commit, then `/publish` with the selected `expected-release-commit`.
+Pass a nonempty full lowercase 40-character SHA to publication and its `publish` preparation scope; root accepts no such guard.
+A changed latest batch must fail guarded publication, not silently switch versions.
+Inspection returns the verified batch even when GitHub publication is complete.
+Gate automatic GitHub work with `publication-needed`, not a nonempty `release-commit`; registry work has separate completion state.
+Explicit manual downstream retries can use completed batches and must retain the selected commit guard.
+Keep `/manage-pr` independent when PR-management failures must not block publication.
+Select the intended package explicitly from the `releases` JSON array for multi-package downstream work.
 
 #### Contributor Note Checks
 
@@ -284,42 +392,32 @@ The check Action defaults to package coverage; set `coverage: pr` only when that
 A `skip-release` exemption requires a nonempty policy-based reason and does not bypass invalid-note validation.
 Treat notes, PR titles, branch names, and other contributor data as data, not shell commands or script inputs.
 
-#### External CI and Project Scripts
-
-When CI must validate the exact release commit, use `/select`, external CI, then `/publish` with the selected `expected-release-commit`.
-Root and `/release` expose equivalent built-in operations when a composed workflow is not needed.
-Selection always returns the verified batch, including completed GitHub publication.
-Gate automatic GitHub work with `publication-needed`, not the presence of `release-commit`; registry work has separate completion state.
-Keep `/manage-pr` independent when PR-management failures must not block publication.
-Do not use `auto` as proof that project CI passed.
-For multiple packages, select the package explicitly from the `releases` JSON array; do not assume one global version or use its first entry blindly.
-
-In `operation: hooks`, the root Action runs configured scripts only for a verified managed release merge in the triggering push range.
-Manual dispatch manages its PR only; it does not run those scripts.
-Scripts run at the verified release commit in a temporary worktree, not the caller's checkout; earlier untracked build files are not copied.
-The caller supplies trusted scripts, tools, artifacts, credentials, and tests before upload.
-Scripts must handle repeated execution and partial publication safely.
-
 ### Validate and Recover
 
-Run available repository workflow checks, including `actionlint` when available, and inspect the diff for pins, inputs, event filters, permissions, and accidental publication changes.
-For an authorized read-only hosted inspection, use `/select`, its `/preview` compatibility name, or root with `operation: select`.
-A successful preview does not authorize publication or prove CI success; read Action outputs only after a successful step.
+Run available repository workflow checks, including `actionlint` when available, and inspect pins, inputs, event filters, permissions, and accidental publication changes.
+Read Action outputs only after a successful step, except documented failure reports from `/check` and `/inspect`.
+PR-only root calls return an empty `release-commit`, `releases: '[]'`, and `ready: 'false'`; these are not a publication inspection.
 
 Dispatch a workflow, push branches or tags, create or merge PRs, create GitHub Releases, or run publication scripts only when the user explicitly requests that specific remote action.
 Permission to edit a workflow does not authorize running it or changing repository settings.
 Actions never approve or merge their PRs.
 
 After failure, inspect the selected commit, batch, remote tags, Releases, and any registry state before retrying.
-Do not merge another release PR until the current batch and downstream artifacts are complete; discovery covers only the latest batch.
-Retry root scripts by re-running the original eligible workflow, not by an unrelated push or manual dispatch.
+Do not merge another Release PR until the current batch and downstream artifacts are complete; discovery covers only the latest batch.
+For a failed root invocation, prefer re-running the original eligible run with the same inputs while it still targets the intended batch.
+A new manual root invocation is PR-only, not a substitute for that retry.
+Scripts repeat from the beginning even when GitHub publication is complete; they must safely handle partial and already-completed uploads.
+Use standalone `/inspect` and guarded `/publish` only when a separate full-publication retry is needed.
+Standalone `/publish` always handles both tags and Releases; do not use it as a selective retry for root tags-only or script-only work.
+If a newer batch has replaced the intended target, stop for explicit recovery instead of repurposing the retry for that batch.
 Do not move existing tags, replace published artifacts, or rewrite Release text.
 
 ## Report the Result
 
 Report changed note, release, or workflow paths, validation results, and any blocked action.
 For CLI tasks, include affected packages and bumps.
-For workflow tasks, include entry points, reviewed Action pins, CLI versions, permissions, and publication behavior.
+For workflow tasks, include root inputs, reviewed Action pins, CLI versions, permissions, and publication behavior.
+If standalone Actions are needed, state the requirement root cannot satisfy and the necessary entry points.
 Distinguish local version changes and local tags from remote publication.
 For workflow tasks, list maintainer-owned setup and hosted checks that remain unverified, including token behavior, fork events, branch rules, caches, and actual publication.
 Local checks do not establish hosted release readiness.
