@@ -46,7 +46,7 @@ Create `.changenote/config.json`:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/narumiruna/changenote/main/schema.json",
+  "$schema": "https://raw.githubusercontent.com/changenote/changenote/main/schema.json",
   "packages": {
     "pkg": {
       "path": ".",
@@ -103,6 +103,6 @@ With a clean working tree, `tag` creates local annotated tags `v1.2.1` and `sdk/
 
 ## Actions and limits
 
-The existing Release PR, preview, and publication Actions use these configured version files and literal tag prefixes. Use compatible CLI and Action pins, and follow the permissions and clean-checkout rules in the [GitHub Actions guide](github-actions-reference.md#requirements). No Go-specific Action setting is required.
+The existing Release PR, preview, and publication Actions use these configured version files and literal tag prefixes. Use compatible CLI and Action pins, and follow the permissions and clean-checkout rules in the [GitHub Actions guide](https://github.com/changenote/action/blob/main/docs/github-actions-reference.md#requirements). No Go-specific Action setting is required.
 
 Release PR staging includes configured version files, package changelogs, saved batch data, and consumed notes. Publication reconstructs the complete release tree. It does not publish to a Go proxy or update internal dependency requirements. Local fixtures verify staging and reconstruction with local Git repositories and a GitHub mock; they do not verify hosted permissions, remote module fetching, or proxy indexing.

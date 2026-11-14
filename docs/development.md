@@ -1,11 +1,12 @@
 # Development and repository releases
 
 These instructions apply to changenote itself.
-For release automation in another repository, use the [GitHub Actions guide](github-actions.md).
+For release automation in another repository, use the [GitHub Actions guide](https://github.com/changenote/action/blob/main/docs/github-actions.md).
+Action implementation, consumer examples, and integration tests are maintained in [changenote/action](https://github.com/changenote/action).
 
 - [Repository layout](#repository-layout)
 - [Rust checks](#rust-checks)
-- [Action checks](#action-checks)
+- [Workflow and publication checks](#workflow-and-publication-checks)
 - [Python distribution](#python-distribution)
 - [Repository release workflow](#repository-release-workflow)
 - [Registry setup](#registry-setup)
@@ -23,10 +24,11 @@ The repository contains one Rust Cargo package and one Python distribution that 
 - `python/changenote/`: Python wrapper module for the Rust CLI.
 - `python/tests/`: wrapper tests.
 - `.changenote/`: repository-level notes and release configuration.
-- `release/action.yml`: config-driven Linux GitHub Action with CLI and package-manager setup.
-- `action.yml`, `publish/action.yml`, `preview/action.yml`, `check/action.yml`: lower-level Linux GitHub Actions.
-- `examples/github-actions/`: minimal and external-CI consumer workflows.
-- `scripts/action/`, `tests/actions/`: Action scripts and local Git/mock GitHub tests.
+- `.github/workflows/`: CLI checks, release routing, and CLI registry publication.
+- `scripts/route-release.py`: repository-specific release routing and preview checks.
+- `scripts/publish-crate.py`: repository-specific crates.io publication helper.
+- `scripts/prepare-python-release.py`: validated release version preparation for crates and wheels.
+- `tests/workflows/`, `tests/publication/`, `tests/python_release/`: CLI workflow and publication tests.
 
 ## Rust checks
 
@@ -42,24 +44,20 @@ cargo run --locked -p changenote -- status
 
 The Rust package and executable names are `changenote`, so `cargo run --locked -p changenote -- status` works from the repository root. Rust build outputs go to `target/`.
 
-## Action checks
+## Workflow and publication checks
 
-For the Actions, install `gh`, `jq`, ShellCheck, actionlint, and zizmor, then run:
+Install actionlint, zizmor, and uv, then run from the CLI repository root:
 
 ```sh
-for script in scripts/action/*.sh; do bash -n "$script"; done
-shellcheck -x scripts/action/*.sh
-# actionlint does not yet parse GitHub's $/ and $/preview references.
-# Keep this exact-message filter until upstream support is available.
-actionlint -ignore '^specifying action "\$/(preview)?" in invalid format because ref is missing\. available formats are "\{owner\}/\{repo\}@\{ref\}" or "\{owner\}/\{repo\}/\{path\}@\{ref\}"$'
+actionlint
 zizmor --offline .github/
-cargo build --locked
-uv run --no-project python -m unittest discover -s tests/actions -v
-uv run --no-project --with pyyaml python -m unittest discover -s tests/action_metadata -v
+uv run --no-project --with pyyaml python -m unittest discover -s tests/workflows -v
+uv run --no-project python -m unittest discover -s tests/publication -v
 uv run --no-project python -m unittest discover -s tests/python_release -v
 ```
 
-Action tests use temporary consumer repositories and a file-backed GitHub mock. They do not create remote GitHub tags or releases.
+These tests validate CLI workflow metadata, routing, and publication helpers without remote uploads.
+For the shared Actions' shell checks and Git/mock GitHub integration tests, use the [Action development guide](https://github.com/changenote/action/blob/main/docs/development.md).
 
 ## Python distribution
 
@@ -84,8 +82,14 @@ CI currently runs on Ubuntu only. It runs Rust format checks, lint checks, and t
 
 Production workflows pin external Actions to full commit SHAs.
 Dependabot uses a seven-day cooldown for each configured ecosystem.
-Release PR and publication jobs build the CLI from the workflow commit and use GitHub's `$/` self-repository references for Action code from that same commit.
+Release PR and publication jobs test and build the CLI from the workflow commit, then call shared Actions from `changenote/action`.
+The migration pins Action revision `4b2d07126b8a4da4b44aa5fb8256dd81a69e2e3a` from [Action PR #1](https://github.com/changenote/action/pull/1).
+They no longer use `$/` self-repository references or local `scripts/action/` helpers.
 Publication still selects the release from the remote base branch.
+Merge the Action PR before the CLI migration PR removes the old entry points from remote main.
+The CLI and Action share the same release version, with separate commit SHAs.
+Do not use an unpinned branch or reuse the old repository SHA with the new Action path.
+See the [migration procedure](https://github.com/changenote/action/blob/main/docs/migration.md).
 
 ### Routing and verification
 
@@ -114,7 +118,11 @@ The crates.io job checks the exact `changenote` version before upload. An existi
 
 ### Registry publication
 
-The workflow builds the CLI instead of installing it and does not push version commits directly to `main`. It publishes the Rust package from the validated release commit to crates.io with `cargo publish --locked` and Trusted Publishing. The `rust-lang/crates-io-auth-action` Action uses GitHub OIDC to obtain a short-lived token. Only the crates.io and PyPI upload jobs have `id-token: write`. The crates.io upload step receives its short-lived token through the `CARGO_REGISTRY_TOKEN` environment variable. No crates.io token secret is required. The workflow also builds Python distributions from that commit and uploads them to PyPI with `uv publish --trusted-publishing always` and GitHub OIDC, without a PyPI token secret. See the [Python distribution guide](../python/README.md) for supported platforms and required PyPI settings. This routing policy is repository-specific.
+The CLI workflow builds the CLI instead of installing it and does not push version commits directly to `main`.
+Registry publication stays in this repository. The crates.io job uses `scripts/publish-crate.py`; it is not a shared Action helper.
+The Action repository's `/release` entry point instead installs its separate trusted CLI pin.
+
+The CLI workflow publishes the Rust package from the validated release commit to crates.io with `cargo publish --locked` and Trusted Publishing. The `rust-lang/crates-io-auth-action` Action uses GitHub OIDC to obtain a short-lived token. Only the crates.io and PyPI upload jobs have `id-token: write`. The crates.io upload step receives its short-lived token through the `CARGO_REGISTRY_TOKEN` environment variable. No crates.io token secret is required. The workflow also builds Python distributions from that commit and uploads them to PyPI with `uv publish --trusted-publishing always` and GitHub OIDC, without a PyPI token secret. See the [Python distribution guide](../python/README.md) for supported platforms and required PyPI settings. This routing policy is repository-specific.
 
 ## Registry setup
 
@@ -123,7 +131,7 @@ The workflow builds the CLI instead of installing it and does not push version c
 Configure crates.io publication before the first upload:
 
 1. Create the GitHub environment `crates-io`. Restrict deployments to `main`; add required reviewers if approval is needed.
-2. Configure the `changenote` crate's [Trusted Publisher](https://crates.io/docs/trusted-publishing) for the GitHub repository `narumiruna/changenote`.
+2. Configure the `changenote` crate's [Trusted Publisher](https://crates.io/docs/trusted-publishing) for the GitHub repository `changenote/changenote`.
    - Set the workflow filename to `release.yml`.
    - Set the environment to `crates-io`.
 
@@ -131,4 +139,4 @@ After the first crates.io publication, users can install the CLI with `cargo ins
 
 ### PyPI
 
-The existing [changenote PyPI project](https://pypi.org/project/changenote/) is the publication target. The Release workflow builds platform wheels with maturin Action and publishes with `uv publish` and Trusted Publishing. Before enabling uploads, the PyPI project owner must configure a GitHub Trusted Publisher for owner `narumiruna`, repository `changenote`, workflow filename `release.yml`, and environment `pypi`. Uploads fail if this trust is absent or does not match. After a successful publication, users on supported platforms can run `uvx changenote status`. See the [Python distribution guide](../python/README.md).
+The existing [changenote PyPI project](https://pypi.org/project/changenote/) is the publication target. The Release workflow builds platform wheels with maturin Action and publishes with `uv publish` and Trusted Publishing. Before enabling uploads, the PyPI project owner must configure a GitHub Trusted Publisher for owner `changenote`, repository `changenote`, workflow filename `release.yml`, and environment `pypi`. Uploads fail if this trust is absent or does not match. After a successful publication, users on supported platforms can run `uvx changenote status`. See the [Python distribution guide](../python/README.md).

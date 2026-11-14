@@ -150,7 +150,7 @@ Inspect the final archive and exported bundle metadata before upload, even when 
 
 The current changenote Actions require Linux.
 Run Xcode validation and app distribution in separate macOS jobs.
-Use the same verified release commit in every job; see the [external CI guide](github-actions.md#external-ci-and-artifacts-logice-example).
+Use the same verified release commit in every job; see the [external CI guide](https://github.com/changenote/action/blob/main/docs/github-actions.md#external-ci-and-artifacts-logice-example).
 GitHub tag or Release creation does not establish App Store or TestFlight delivery.
 
 ## Swift packages

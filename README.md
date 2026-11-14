@@ -154,18 +154,21 @@ Choose the Action that matches your publication process:
 
 | Goal | Action | Setup |
 | --- | --- | --- |
-| Manage version PRs and publish tags and GitHub Releases | `narumiruna/changenote/release` | Installs a compatible CLI and prepares package-manager caches. |
-| Manage version PRs and run optional project publication scripts | `narumiruna/changenote` | Requires an installed compatible CLI and caller-owned tools. |
+| Manage version PRs and publish tags and GitHub Releases | `changenote/action/release` | Installs the trusted pinned CLI and prepares package-manager caches. |
+| Manage version PRs and run optional project publication scripts | `changenote/action` | Requires an installed compatible CLI and caller-owned tools. |
 
-Pin Actions to reviewed full commit SHAs.
+Actions are maintained in [changenote/action](https://github.com/changenote/action).
+Pin Actions to reviewed full commit SHAs from that repository, not CLI commit SHAs.
+The root, `/release`, `/check`, `/preview`, and `/publish` entry paths remain supported.
 With neither `publish-script` nor `release-script`, the root Action manages PRs without publication.
 Actions never approve or merge their PRs.
 
-- [GitHub Actions guide](docs/github-actions.md): setup, permissions, inputs, and external CI.
-- [Minimal release workflow](examples/github-actions/release.yml): built-in tag and GitHub Release publication.
-- [Project-script workflow](examples/github-actions/command-hooks.yml): caller-owned builds and publication.
-- [PR note checks](docs/checks.md#github-action-report): read-only checks for contributor PRs.
-- [Lower-level Actions](docs/github-actions-reference.md): separate PR, preview, and publication operations.
+- [GitHub Actions guide](https://github.com/changenote/action/blob/main/docs/github-actions.md): setup, permissions, inputs, and external CI.
+- [Minimal release workflow](https://github.com/changenote/action/blob/main/examples/github-actions/release.yml): built-in tag and GitHub Release publication.
+- [Project-script workflow](https://github.com/changenote/action/blob/main/examples/github-actions/command-hooks.yml): caller-owned builds and publication.
+- [PR note checks](https://github.com/changenote/action/blob/main/docs/checks.md#github-action-report): read-only checks for contributor PRs.
+- [Lower-level Actions](https://github.com/changenote/action/blob/main/docs/github-actions-reference.md): separate PR, preview, and publication operations.
+- [Repository migration](https://github.com/changenote/action/blob/main/docs/migration.md): new repository publication and production pin requirements.
 
 Built-in publication creates Git tags and GitHub Releases, not registry uploads.
 Keep changelog output enabled for built-in publication.
@@ -178,8 +181,8 @@ Use project scripts or separate jobs for registries and other distribution syste
 | [Configuration](docs/configuration.md) | Monorepos, version formats, additional outputs, tags, lockfiles, and version groups. |
 | [Change notes and changelogs](docs/notes.md) | Release policy, multiple packages, automatic names, note types, sections, and templates. |
 | [Release behavior](docs/releases.md) | Version calculation, saved batches, changelog entries, diagnostics, safety, and recovery. |
-| [PR note checks](docs/checks.md) | Coverage rules, exemptions, file patterns, and the check Action. |
-| [GitHub Actions](docs/github-actions.md) | Release workflows, project scripts, tool setup, and external CI. |
+| [PR note checks](docs/checks.md) | CLI coverage rules, exemptions, file patterns, and a link to the check Action. |
+| [GitHub Actions](https://github.com/changenote/action/blob/main/docs/github-actions.md) | Release workflows, project scripts, tool setup, and external CI. |
 | [Go modules](docs/go.md) | Root and nested modules, v2+ paths, and tag prefixes. |
 | [Swift packages and Apple apps](docs/swift.md) | Xcode version files, build numbers, and Swift Package Manager tags. |
 | [Python distribution](python/README.md) | Wheels, `uvx`, wrapper development, and PyPI publication. |

@@ -69,7 +69,7 @@ Before enabling uploads:
 
 1. Create the GitHub environment `pypi`. Restrict deployments to `main`; add required reviewers if approval is needed.
 2. In the existing PyPI `changenote` project's **Publishing** settings, add a GitHub [Trusted Publisher](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
-   - Set the owner to `narumiruna`.
+   - Set the owner to `changenote`.
    - Set the repository to `changenote`.
    - Set the workflow filename to `release.yml`, not its path or display name.
    - Set the environment to `pypi`.

@@ -29,7 +29,7 @@ The optional `$schema` field in `.changenote/config.json` enables editor validat
 `init` adds this reference:
 
 ```json
-"$schema": "https://raw.githubusercontent.com/narumiruna/changenote/main/schema.json"
+"$schema": "https://raw.githubusercontent.com/changenote/changenote/main/schema.json"
 ```
 
 Replace `main` with a commit SHA to pin the schema, or use a local schema path.

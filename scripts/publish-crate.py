@@ -13,7 +13,7 @@ def publish(root: Path, version: str) -> None:
     request = Request(
         f"https://crates.io/api/v1/crates/changenote/{version}",
         headers={
-            "User-Agent": "changenote-release (https://github.com/narumiruna/changenote)"
+            "User-Agent": "changenote-release (https://github.com/changenote/changenote)"
         },
     )
     try:

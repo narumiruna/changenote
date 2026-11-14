@@ -71,7 +71,7 @@ fn create_initial_config(
         .unwrap_or_else(|| Path::new("."));
     let config = Config {
         schema: Some(
-            "https://raw.githubusercontent.com/narumiruna/changenote/main/schema.json".to_owned(),
+            "https://raw.githubusercontent.com/changenote/changenote/main/schema.json".to_owned(),
         ),
         packages: BTreeMap::from([(
             name.to_owned(),
