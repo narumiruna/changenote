@@ -327,9 +327,11 @@ Members without direct notes retain their native explanatory message. No JS modu
 
 With `"enabled": false`, version files and saved batch metadata still update, and consumed notes are removed, but changelogs are neither created nor changed.
 An existing changelog is not a release-body fallback. Local tagging remains supported.
-GitHub preview and publication do not support batches generated with changelog output disabled; they fail before remote tag or Release writes.
+The built-in publication paths in `/preview`, `/publish`, and `/release` do not support batches generated with changelog output disabled; they fail before remote tag or Release writes.
 This decision uses the selected historical batch's configuration, not later live settings.
-Keep changelogs enabled if GitHub publication is required. Disabling output does not preserve consumed summaries elsewhere.
+Keep changelogs enabled for built-in GitHub publication.
+The root Action's custom `publish-script` and `release-script` do not require changelog output.
+Disabling output does not preserve consumed summaries elsewhere.
 Upgrade CLI and all Action pins together before using these controls.
 
 ## Note sources and automatic names
@@ -757,7 +759,12 @@ Manual `operation=retry-publication` skips PR management and retries the latest 
 
 The crates.io job checks the exact `changenote` version before upload. An existing non-yanked version is skipped; its contents are not compared with the release checkout. A yanked version, invalid response, or API error stops the job. Only HTTP 404 permits a new upload. Retry builds can differ from files already on PyPI: `uv publish --check-url` skips matching files but rejects different contents for the same filename. Inspect registry state and resolve conflicts separately; never replace published files automatically.
 
-The workflow builds the CLI instead of installing it and does not push version commits directly to `main`. It publishes the Rust package from the validated release commit to crates.io with `cargo publish --locked` and Trusted Publishing. The `rust-lang/crates-io-auth-action` Action uses GitHub OIDC to obtain a short-lived token. Only the crates.io and PyPI upload jobs have `id-token: write`. The crates.io upload step receives its short-lived token through the `CARGO_REGISTRY_TOKEN` environment variable. No crates.io token secret is required. The workflow also builds Python distributions from that commit and uploads them to PyPI with `uv publish --trusted-publishing always` and GitHub OIDC, without a PyPI token secret. See `python/README.md` for supported platforms and required PyPI settings. This routing policy is repository-specific; the reusable Actions keep their historical-batch recovery behavior and do not publish to registries.
+The workflow builds the CLI instead of installing it and does not push version commits directly to `main`. It publishes the Rust package from the validated release commit to crates.io with `cargo publish --locked` and Trusted Publishing. The `rust-lang/crates-io-auth-action` Action uses GitHub OIDC to obtain a short-lived token. Only the crates.io and PyPI upload jobs have `id-token: write`. The crates.io upload step receives its short-lived token through the `CARGO_REGISTRY_TOKEN` environment variable. No crates.io token secret is required. The workflow also builds Python distributions from that commit and uploads them to PyPI with `uv publish --trusted-publishing always` and GitHub OIDC, without a PyPI token secret. See `python/README.md` for supported platforms and required PyPI settings. This routing policy is repository-specific.
+
+The built-in `/release` and `/publish` Actions can recover publication of the latest validated batch when invoked after later pushes. They do not implement registry uploads.
+The root Action runs custom scripts only for a managed batch merged in the triggering push range.
+An unrelated later push does not retry an older batch, and manual dispatch only manages the PR.
+To retry custom scripts, re-run the original eligible workflow. A newer batch blocks that retry; scripts must handle partial publication safely.
 
 Configure crates.io publication before the first upload:
 
