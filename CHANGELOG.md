@@ -1,3 +1,29 @@
+## 0.13.0
+
+### Minor Changes
+
+- Sources: [82d5a7fb1c94](https://github.com/changenote/changenote/commit/82d5a7fb1c944a9007476c691233d7876cc0a31d)
+  
+  Update the bundled skill for complete root operations and reusable release Actions.
+  Use a trusted same-job CLI path to reuse setup.
+  Check publication-needed separately from batch identity before automatic GitHub publication.
+
+- Sources: [82d5a7fb1c94](https://github.com/changenote/changenote/commit/82d5a7fb1c944a9007476c691233d7876cc0a31d)
+  
+  Add optional `changelog.source_repository` to include reproducible commit links for each change note.
+  Sources include creation and later edits on first-parent history, with actual renames followed.
+  Enable source links for this repository's own release notes.
+  Use complete Git history and commit notes before versioning; unprovable sources stop version writes.
+  Upgrade the CLI in all release stages before enabling this setting.
+
+### Patch Changes
+
+- Sources: [82d5a7fb1c94](https://github.com/changenote/changenote/commit/82d5a7fb1c944a9007476c691233d7876cc0a31d)
+  
+  Update the bundled skill to use separate notes for independent changes and preserve verified implementation PR links.
+  State required migration steps and known limits only when supported by current evidence.
+  Correct Action installation guidance to use PyPI wheels with uv and require a `v` prefix for exact CLI versions.
+
 ## 0.12.1
 
 ### Patch Changes
