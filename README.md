@@ -528,39 +528,70 @@ Use a clean checkout, review the result, and do not run concurrent local version
 
 ## GitHub Actions
 
-For config-driven setup, use `narumiruna/changenote/release@<full-action-commit-sha>`.
-It installs a compatible CLI, prepares supported package-manager caches, and runs automatic or separate release operations.
-See the [high-level Action guide](docs/github-actions.md) for minimal and Logice-style external-CI workflows.
+Use `narumiruna/changenote@<full-action-commit-sha>` to manage version PRs and run your project's publication and release scripts after a verified merge.
+Both scripts are optional. With neither script, the root Action creates no version tags, GitHub Releases, or registry uploads.
+
+For built-in tag and GitHub Release publication, use `narumiruna/changenote/release@<full-action-commit-sha>`.
+That Action installs a compatible CLI, prepares supported package-manager caches, and runs automatic or separate release operations.
+It does not accept `publish-script` or `release-script`.
+See the [Action guide](docs/github-actions.md) for both interfaces and external-CI workflows.
 Package configuration needs no new fields. Existing Actions remain supported.
 
 The four lower-level composite Actions are:
 
-- `narumiruna/changenote@<full-commit-sha>`: manage a version PR and run optional project commands after its verified merge.
+- `narumiruna/changenote@<full-commit-sha>`: manage a version PR and run optional project scripts after its verified merge.
 - `narumiruna/changenote/publish@<full-commit-sha>`: publish annotated tags and GitHub Releases.
 - `narumiruna/changenote/preview@<full-commit-sha>`: inspect publication state without source or remote writes.
 - `narumiruna/changenote/check@<full-commit-sha>`: check ordinary PR notes and report pending releases.
 
-The Release PR and publication Actions require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `changenote` executable on `PATH`. Ubuntu GitHub-hosted runners include the non-CLI tools. Package version files, lockfiles, changelogs, and `.changenote/releases.json` must not be symlinks. Both writing Actions check the batch path before CLI writes. Run at the repository root; the Actions load their scripts from the Action checkout, not the consumer repository. They do not install the CLI. Registry publication through root command inputs uses caller-owned tools. The CLI updates configured primary and additional version files and supported existing lockfiles; it does not synchronize unlisted manifests. Manifest releases also need the package managers and cached dependencies listed above.
+The Release PR and publication Actions require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `changenote` executable on `PATH`. Ubuntu GitHub-hosted runners include the non-CLI tools. Package version files, lockfiles, changelogs, and `.changenote/releases.json` must not be symlinks. Both writing Actions check the batch path before CLI writes. Run at the repository root; the Actions load their scripts from the Action checkout, not the consumer repository. They do not install the CLI. Registry publication through root script inputs uses caller-owned tools. The CLI updates configured primary and additional version files and supported existing lockfiles; it does not synchronize unlisted manifests. Manifest releases also need the package managers and cached dependencies listed above.
 
 ### Post-merge project commands
 
-The root Action accepts optional `publish-script` and `release-script` Bash scripts.
-After a managed version PR is merged, it verifies the exact release tree, runs `publish-script`, then runs `release-script` only after success.
-For example, a prepared package can use `publish-script: uv publish` or `publish-script: cargo publish --locked`; a project script can build, test, and upload.
-`release-script: bash scripts/release.sh` can then push tags or publish a GitHub Release.
-With neither input, the root Action performs no package, tag, or GitHub publication.
+The root Action generates and updates the version PR. It never approves or merges that PR.
+After a managed PR is merged, it verifies the exact release tree, runs `publish-script`, then runs `release-script` only after success.
+
+| Optional input | Purpose |
+| --- | --- |
+| `publish-script` | Publish packages with tools such as `uv publish` or `cargo publish --locked`. |
+| `release-script` | Run a project script to push version tags, upload assets, or publish a GitHub Release. |
+
+Both inputs accept Bash script text. Use `bash` to run a Bash script file. For example, after checkout and tool setup:
+
+```yaml
+permissions:
+  contents: write
+  pull-requests: write
+steps:
+  - uses: narumiruna/changenote@<full-action-commit-sha>
+    env:
+      GH_TOKEN: ${{ github.token }}
+    with:
+      publish-script: bash scripts/publish.sh
+      release-script: bash scripts/release.sh
+```
+
+The script paths in this example belong to the consumer repository.
+Test and build the verified source before upload. Enforce these checks in project scripts or separate CI jobs.
+Remove either input to skip that step. Remove both inputs to manage version PRs without publication.
+For tags without a GitHub Release, make `release-script` push tags only.
+A failed `publish-script` prevents `release-script`; either script failure fails the Action.
 
 The root Action requires a compatible installed CLI and the tools/caches needed to replay configured lockfiles.
 It sets up uv for merge routing and requires Python 3 on Linux, as provided by Ubuntu runners.
 Use base-branch pushes or manual dispatch; manual dispatch only manages the PR.
 Contributor PR events are rejected. Use `/check` for those events.
 
-Commands run in a disposable worktree at `CHANGENOTE_RELEASE_COMMIT` and receive the whole batch as `CHANGENOTE_RELEASES` JSON.
+Scripts run in a disposable worktree at `CHANGENOTE_RELEASE_COMMIT` and receive the whole batch as `CHANGENOTE_RELEASES` JSON.
 They share generated artifacts, but do not inherit untracked files from the caller's checkout or the `github-token` input automatically.
-Provide command credentials through the caller step's `env`.
+Provide script credentials through the caller step's `env`.
+For Git pushes, configure Git authentication explicitly; `GH_TOKEN` alone does not set up a Git credential helper.
 The caller owns project tests, dependencies, builds, registry access, approval environments, and concurrency.
 Re-running the original eligible workflow repeats commands; scripts must handle partial publication safely.
 A newer batch stops a stale run. No exactly-once execution or automatic rollback is promised.
+
+When upgrading from the old input names, replace `publish-command` with `publish-script` and `release-command` with `release-script`.
+The old input names are not supported.
 
 See the [command-hook workflow](examples/github-actions/command-hooks.yml) and [contract, migration, and hosted handoff](docs/github-actions.md#root-action-post-merge-commands).
 Existing `/release`, `/publish`, `/preview`, and `/check` behavior is unchanged.
@@ -607,7 +638,9 @@ No hosted test, tag creation, or publication is authorized by the local checks.
 
 ### Release PR workflow
 
-Use this workflow in a consumer repository. Replace each SHA placeholder with a reviewed full commit SHA. The CLI and Action must use compatible release-plan formats.
+This two-job example uses the root Action for PR management and `/publish` for built-in tags and GitHub Releases.
+It does not use the project script inputs. Use the [command-hook workflow](examples/github-actions/command-hooks.yml) when your project owns publication.
+Replace each SHA placeholder with a reviewed full commit SHA. The CLI and Action must use compatible release-plan formats.
 
 ```yaml
 name: Release
@@ -702,9 +735,9 @@ The preview is advisory, not a reservation. Remote state can change afterward; r
 
 ### Publication workflow
 
-The generic consumer workflow above runs publication after PR management on every base-branch push. Publication can recover an earlier batch even if PR management fails. Its job needs only `contents: write`. The repository's own workflow adds the automatic publication gate described below and runs PR management and publication independently.
+The two-job built-in publication workflow above runs publication after PR management on every base-branch push. Publication can recover an earlier batch even if PR management fails. Its job needs only `contents: write`. The repository's own workflow adds the automatic publication gate described below and runs PR management and publication independently.
 
-In the generic consumer workflow, manual dispatch runs both PR management and publication again. In this repository, run **Release** manually on `main` with `operation=retry-publication` to retry a partial failure. The default `operation=manage-pr` only manages the Release PR. Routing runs for every event, outside concurrency groups. PR management and publication use separate job concurrency groups. A later ordinary push can replace a pending PR update, but cannot replace a pending publication. Publication does not depend on the PR-management job. Keep required publication steps in this workflow: tags pushed with `GITHUB_TOKEN` do not trigger other push workflows.
+In that two-job example, manual dispatch runs both PR management and built-in GitHub publication again. This differs from the root script workflow, where manual dispatch only manages the PR. In this repository, run **Release** manually on `main` with `operation=retry-publication` to retry a partial failure. The default `operation=manage-pr` only manages the Release PR. Routing runs for every event, outside concurrency groups. PR management and publication use separate job concurrency groups. A later ordinary push can replace a pending PR update, but cannot replace a pending publication. Publication does not depend on the PR-management job. Keep required publication steps in this workflow: tags pushed with `GITHUB_TOKEN` do not trigger other push workflows.
 
 Publication selects the latest first-parent commit that changes `.changenote/releases.json`. It reconstructs that commit from the parent's consumed notes and compares the complete generated tree before publication. Parent notes that remain in the release commit are excluded from replay and restored unchanged before tree comparison. Replay preserves note filename bytes without UTF-8 conversion. A Release PR can therefore leave notes that reached the base branch after its generation pending for the next release. Unrelated edits, including changes to retained notes, still fail tree verification. The publication Action checks current output, then output without lockfile synchronization. For historical note-bearing batches, it also checks the older flat-changelog profile. Historical batch bytes are regenerated from the validated parent plan in a temporary worktree. Mixed output profiles and arbitrary edits are rejected. The hidden `version --no-lockfiles` option is reserved for reconstruction in a temporary Action worktree; do not use it for new releases. Standard merge, squash, and rebase merges are supported. A later unrelated commit or new pending notes do not change the release target.
 
