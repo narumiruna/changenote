@@ -112,6 +112,15 @@ pub(crate) fn plan(
     config: &ReleaseConfig,
     notes: &[(PathBuf, NoteData)],
 ) -> Result<Vec<GroupedRelease>> {
+    plan_with_sources(root, config, notes, false)
+}
+
+pub(crate) fn plan_with_sources(
+    root: &Path,
+    config: &ReleaseConfig,
+    notes: &[(PathBuf, NoteData)],
+    require_sources: bool,
+) -> Result<Vec<GroupedRelease>> {
     let versions = config
         .config
         .packages
@@ -221,7 +230,26 @@ pub(crate) fn plan(
                 notes: direct.iter().map(|(_, n, _)| n.summary.clone()).collect(),
                 note_bumps: direct.iter().map(|(_, _, b)| *b).collect(),
             };
-            let note_sections = sections::group(&release, &note_types, config.changelog.as_ref());
+            let mut rendered = release.clone();
+            if let Some(repository) = config
+                .changelog
+                .as_ref()
+                .and_then(|c| c.source_repository.as_deref())
+            {
+                rendered.notes = direct
+                    .iter()
+                    .map(|(path, note, _)| {
+                        crate::sources::render(
+                            root,
+                            &relative_note(path),
+                            repository,
+                            &note.summary,
+                            require_sources,
+                        )
+                    })
+                    .collect::<Result<_>>()?;
+            }
+            let note_sections = sections::group(&rendered, &note_types, config.changelog.as_ref());
             let linked_group = linked_causes.remove(&release.package);
             Ok(GroupedRelease {
                 linked_group,

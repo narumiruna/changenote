@@ -169,7 +169,7 @@ pub fn version_with_output(
 ) -> Result<Vec<Release>> {
     let release_config = config::load_release_config(root)?;
     let notes = note::notes(root, &release_config)?;
-    let details = planning::plan(root, &release_config, &notes)?;
+    let details = planning::plan_with_sources(root, &release_config, &notes, true)?;
     let releases: Vec<_> = details.iter().map(|d| d.detail.release.clone()).collect();
     ensure!(
         !legacy

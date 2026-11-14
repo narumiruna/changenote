@@ -103,7 +103,11 @@ Use ASD-STE100 principles for English note text; full compliance is not required
 Give priority to technical accuracy and clear meaning.
 Keep required technical names and terms, and use conventional release-note verbs such as `Add`, `Fix`, and `Remove`.
 
-- Describe the change and its effect on users, not the implementation history.
+- Use a separate note for each independent change, even when the package and bump are the same.
+  - Update an existing note only for the same change; do not combine unrelated work from another PR.
+- Start with a short summary of the change and its effect on users, not the implementation history.
+- State required user actions and known limits when the change evidence supports them.
+  - Verify current compatibility before presenting a past blocker as a current limit.
 - Use active voice and one topic per sentence.
 - Aim for 25 words or fewer in descriptive sentences and 20 words or fewer in instructions.
   - Use longer sentences when necessary to keep the technical meaning accurate.
@@ -112,8 +116,14 @@ Keep required technical names and terms, and use conventional release-note verbs
 - Put each sentence on a separate line.
 - Write commands, paths, option names, and API names in backticks.
 - To include a PR reference, add a Markdown link to the note summary, such as `Fix output ([#123](https://github.com/owner/repo/pull/123))`.
-  - Use the actual repository URL and a verified PR number; omit the reference if the PR is not known.
+  - Use the actual repository URL and verified PR numbers; preserve several links when several PRs explain the change.
+  - Omit unknown references; do not guess a PR number or substitute the release PR for the implementation PR.
   - changenote does not look up or add PR numbers automatically.
+- If `changelog.source_repository` is configured, generated sections also contain automatic commit links from local note history.
+  - These links identify note sources, not necessarily the complete implementation.
+  - Commit new or changed notes before an authorized version operation and provide complete Git history.
+  - Before commit, status can show the summary without automatic links; this does not prove release readiness.
+  - Do not change configuration just to add a note. See the [source-link rules](https://github.com/changenote/changenote/blob/main/docs/notes.md#automatic-commit-source-links).
 - For a breaking change, identify what no longer works and give the required migration steps.
   - Use imperative sentences for instructions.
   - Select the bump from the repository's compatibility policy; do not assume every breaking change requires `major`.
@@ -220,10 +230,10 @@ Built-in publication creates Git tags and GitHub Releases, not registry uploads.
   - Pin other external Actions to reviewed full SHAs as well.
   - If a reviewed SHA is unavailable, leave a clearly marked template and report that it is not ready to run.
 - Select compatible CLI and Action versions when upgrading release tooling; their release versions are independent.
-  - All five current entry points accept `version` and install the CLI from crates.io outside the consumer checkout.
+  - All five current entry points accept `version` and install a prebuilt CLI wheel from PyPI with uv outside the consumer checkout.
   - `version` defaults to `latest`, the latest stable published CLI; pinning the Action SHA does not pin this version.
   - For repeatable runs, use the same exact stable CLI version across PR generation, selection, and publication.
-  - Exact versions with or without a leading `v` are accepted; ranges, Git revisions, URLs, and prereleases are not.
+  - Exact versions require a leading `v`; bare versions, ranges, Git revisions, URLs, and prereleases are rejected.
   - Older Action revisions can require caller installation or use a fixed CLI source pin; follow their metadata instead of assuming `version` exists.
   - Never build the CLI from contributor code.
 - Use Linux runners and restrict release management and publication to the selected base branch's push and manual events.

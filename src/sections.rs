@@ -21,6 +21,11 @@ pub(crate) struct ChangelogConfig {
         deserialize_with = "crate::config::deserialize_optional_value"
     )]
     pub note_template: Option<NoteTemplate>,
+    #[serde(
+        default,
+        deserialize_with = "crate::config::deserialize_optional_value"
+    )]
+    pub source_repository: Option<String>,
 }
 
 fn default_enabled() -> bool {
@@ -47,6 +52,9 @@ pub struct NoteSection {
 
 impl ChangelogConfig {
     pub fn validate(&self) -> Result<()> {
+        if let Some(repository) = &self.source_repository {
+            crate::sources::validate_repository(repository)?;
+        }
         let Some(sections) = &self.sections else {
             return Ok(());
         };

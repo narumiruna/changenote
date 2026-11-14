@@ -7,6 +7,7 @@ A note selects affected packages and bumps; optional types control changelog sec
 - [Note format](#note-format)
 - [Notes for multiple packages](#notes-for-multiple-packages)
 - [Note sources and automatic names](#note-sources-and-automatic-names)
+- [Automatic commit source links](#automatic-commit-source-links)
 - [Note types and changelog sections](#note-types-and-changelog-sections)
 - [Changelog output controls and native templates](#changelog-output-controls-and-native-templates)
 
@@ -27,7 +28,11 @@ An exemption removes the missing-note requirement, not validation of pending not
 
 A note is a Markdown file in the top level of `.changenote/`.
 The front matter assigns a SemVer bump to each affected package.
-The body describes the change's effect on users.
+Start the body with a short summary of the change's effect on users.
+Use a separate note for each independent change, even when the package and bump are the same.
+Update an existing note only for the same change.
+Add required migration steps and known limits when supported by the change evidence.
+Keep verified implementation PR links in the body; do not guess unknown PR numbers.
 
 ```markdown
 ---
@@ -95,6 +100,86 @@ Named notes, automatic names, mixed bumps, and `--type` remain available.
 Input read errors, invalid UTF-8, and empty messages fail before a note is created.
 Multiline Markdown uses the same whitespace rules as inline messages.
 No editor or shell command is run to interpret the message.
+
+## Automatic commit source links
+
+Set `changelog.source_repository` to enable links from each direct note to its local Git history:
+
+```json
+{
+  "changelog": {
+    "source_repository": "https://github.com/owner/repo"
+  }
+}
+```
+
+Use a canonical HTTPS GitHub owner/repository URL, without a trailing slash or `.git` suffix.
+Credentials, query strings, fragments, other hosts, and invalid paths are rejected.
+Sections remain optional; source links also work with default bump groups.
+Without this field, output stays unchanged and no source-history lookup runs.
+
+The CLI checks that the current note content matches a regular file in `HEAD`, using the parser's CRLF-to-LF normalization.
+Clean CRLF checkouts retain their sources; other content differences remain unlinked.
+The check does not execute Git clean filters or textconv commands, and user `log.follow` settings do not change attribution.
+It selects note changes on first-parent history, including creation and later edits.
+A merge that changes the note is a source on that branch; internal side-branch commits are not separate sources.
+Unrelated later commits do not change the links.
+The CLI follows actual renames at a fixed 50% similarity threshold, but not copies of identical files.
+A deletion followed by recreation, or a file-type change, starts a new note history.
+A move rewritten beyond that similarity threshold is treated as a new file.
+Sources are deduplicated and sorted by full commit object ID, not time.
+The link label uses the first 12 characters; its target uses the full object ID.
+
+Each rendered note starts with a `Sources:` paragraph, followed by the original summary.
+This keeps links outside fenced or indented code, including an unclosed fence.
+Source attribution runs before `note_template`; native section and list rendering run after it.
+Raw `notes`, note paths, bumps, public Rust layouts, and saved release batches do not change.
+Group-only releases have no fabricated direct sources.
+With `enabled: false`, planned sections still show sources, but changelogs remain unchanged and built-in publication remains unsupported.
+
+These links identify commits that changed the note, not necessarily the complete implementation.
+Keep verified PR links in the summary when useful; several PR links can explain one change.
+No GitHub API lookup, remote inference, or network request is used to find sources.
+The configured repository URL must identify the repository that contains this history.
+
+`add` and `status` remain usable before a note is committed.
+Untracked or changed notes, missing Git, source archives, and shallow or incomplete history have no automatic link in status.
+When enabled, `version` rejects any consumed note without provable sources before writing files or deleting notes.
+Unrelated paused notes do not block active releases.
+Commit the notes and provide complete local history before versioning; the CLI does not fetch it.
+
+Upgrade the CLI used for generation, preview, and publication before enabling this field.
+Older CLIs reject it.
+Use the same exact compatible CLI version in each stage.
+To disable source links before versioning, remove the field.
+For an existing release batch, keep compatible tooling and its historical configuration for replay; do not edit the generated tree.
+
+### Separate change examples
+
+Use separate notes for repository migration and CLI installation changes:
+
+```markdown
+---
+pkg-a: minor
+---
+
+Move the Actions to the dedicated Action repository.
+Update workflow references to the new repository and use a reviewed Action commit SHA.
+```
+
+```markdown
+---
+pkg-a: minor
+---
+
+Install the CLI from a prebuilt PyPI wheel with uv.
+Remove separate CLI installation steps.
+Set the same exact compatible CLI version in each release job.
+```
+
+Replace package names and instructions with the actual change evidence.
+Add only verified source links and current compatibility limits.
+These examples do not change published release text or establish that a particular CLI version is available.
 
 ## Note types and changelog sections
 

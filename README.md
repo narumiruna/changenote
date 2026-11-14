@@ -18,7 +18,9 @@ From a local checkout, with stable Rust and edition 2024 support:
 cargo install --path . --locked
 ```
 
-Git is required for `check` and `tag`.
+Git is required for `check`, `tag`, and opt-in [commit source links](docs/notes.md#automatic-commit-source-links).
+Source links require `changelog.source_repository` with a canonical HTTPS GitHub repository URL and complete local note history.
+Without this setting, planning and versioning need no Git history for source attribution.
 Plain-text and Xcode configuration version files need no language runtime or package manager.
 Manifest releases with a supported existing lockfile need the corresponding [package manager and offline cache](docs/configuration.md#automatic-lockfile-synchronization).
 
