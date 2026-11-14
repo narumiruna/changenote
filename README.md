@@ -12,11 +12,25 @@ Written in Rust. Inspired by [Changesets](https://github.com/changesets/changese
 
 ## Install
 
-From a local checkout, with stable Rust and edition 2024 support:
+1. Install with `uv`:
 
-```sh
-cargo install --path . --locked
-```
+   ```sh
+   uv tool install changenote
+   changenote --help
+   ```
+
+2. Run with `uvx`:
+
+   ```sh
+   uvx changenote --help
+   ```
+
+3. Install with Cargo. Requires stable Rust with edition 2024 support:
+
+   ```sh
+   cargo install changenote --locked
+   changenote --help
+   ```
 
 Git is required for `check`, `tag`, and opt-in [commit source links](docs/notes.md#automatic-commit-source-links).
 Source links require `changelog.source_repository` with a canonical HTTPS GitHub repository URL and complete local note history.
