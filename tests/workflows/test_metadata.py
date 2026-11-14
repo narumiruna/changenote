@@ -227,6 +227,19 @@ class Metadata(unittest.TestCase):
         self.assertIn("uv publish --trusted-publishing always", command)
         self.assertIn("--check-url https://pypi.org/simple/", command)
 
+    def test_macos_wheels_use_supported_native_runners(self):
+        wheels = read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]["wheels"]
+        runners = {
+            entry["target"]: entry["runner"]
+            for entry in wheels["strategy"]["matrix"]["include"]
+            if entry["target"].endswith("-apple-darwin")
+        }
+        self.assertEqual(runners, {
+            "x86_64-apple-darwin": "macos-15-intel",
+            "aarch64-apple-darwin": "macos-15",
+        })
+        self.assertEqual(wheels["runs-on"], "${{ matrix.runner }}")
+
     def test_crates_io_uses_validated_commit_and_retries(self):
         jobs = read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]
         crate = jobs["crates-io"]
