@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/changenote/changenote/main/schema.json",
+  "title": "changenote configuration",
+  "description": "Packages managed by changenote. Paths and version files are also checked by the CLI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["packages"],
+  "properties": {
+    "$schema": {
+      "description": "Schema reference for editors. The CLI does not fetch or validate this reference.",
+      "type": ["string", "null"]
+    },
+    "changed_file_patterns": {
+      "description": "Package-relative check paths. Include matches minus all leading-! exclusions. Omission includes every package path.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "base_branch": {
+      "description": "Local Git comparison ref for check when --since is omitted. Does not select release Action branches.",
+      "type": "string",
+      "minLength": 1
+    },
+    "ignore": {
+      "description": "Explicit configured packages whose pending notes are retained instead of released. Fixed groups must be paused in full.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+    },
+    "linked": {
+      "description": "Disjoint explicit-name groups that share a version baseline without activating inactive members.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 2,
+        "uniqueItems": true,
+        "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+      }
+    },
+    "fixed": {
+      "description": "Groups of names or * and ? patterns. Each must resolve to at least two distinct disjoint packages; checked by the CLI.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": { "type": "string", "pattern": "^[A-Za-z0-9_*?-]+$" }
+      }
+    },
+    "changelog": {
+      "description": "Optional changelog output controls, ordered sections, and bounded note rendering. Omission retains the existing output.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "Write package changelogs. When false, local version and tag remain supported but GitHub publication is unsupported.",
+          "type": "boolean",
+          "default": true
+        },
+        "note_template": {
+          "description": "{summary}, or one metadata line followed by a blank line and {summary}. Metadata supports {package}, {version}, and {bump}; the CLI validates placeholders.",
+          "type": "string",
+          "minLength": 1,
+          "default": "{summary}"
+        },
+        "source_repository": {
+          "description": "Canonical https://github.com/<owner>/<repo> URL. Enables deterministic note-source commit links from complete local Git history. Omission preserves existing output without source lookups.",
+          "type": "string",
+          "pattern": "^https://github\\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"
+        },
+        "sections": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/section" }
+        }
+      }
+    },
+    "packages": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[A-Za-z0-9_-]+$" },
+      "additionalProperties": { "$ref": "#/$defs/package" }
+    }
+  },
+  "$defs": {
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "types"],
+      "properties": {
+        "title": {
+          "description": "Nonempty trimmed heading without control characters or an initial SemVer version. Titles must be unique; Other Changes is reserved. The CLI checks these rules.",
+          "type": "string",
+          "minLength": 1
+        },
+        "types": {
+          "description": "Note types assigned to this section. A type can occur only once across all sections; the CLI checks this rule.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "version_file"],
+      "properties": {
+        "path": {
+          "description": "Package directory relative to the repository root. Parent components are not allowed.",
+          "type": "string",
+          "minLength": 1
+        },
+        "version_file": {
+          "description": "Version file relative to the package directory. Use VERSION, pyproject.toml, Cargo.toml, package.json, or an .xcconfig file with one literal MARKETING_VERSION assignment. Parent components are not allowed.",
+          "type": "string",
+          "minLength": 1
+        },
+        "version_outputs": {
+          "description": "Additional version files relative to the package directory, with the same formats as version_file. Each must match the primary version. Parent components, symlinks, and overlapping output paths are not allowed; the CLI checks these rules.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "tag_prefix": {
+          "description": "Literal prefix before the full release version, for example sdk/v. The CLI validates the complete Git tag and rejects duplicate planned tags. Without this field, the default tag format is unchanged.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

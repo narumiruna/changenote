@@ -13,12 +13,13 @@ Action implementation, consumer examples, and integration tests are maintained i
 
 ## Repository layout
 
-The repository contains one Rust Cargo package and one Python distribution that packages its executable. Neither uses a workspace; the CLI still supports release plans for other monorepos.
+The repository uses one Cargo workspace with one member, `crates/changenote`. The Python distribution packages its executable and does not use a uv workspace. The CLI supports release plans for other monorepos.
 
-- `Cargo.toml`: Rust package metadata, dependencies, and release version source.
-- `Cargo.lock`: Rust dependency lockfile.
-- `src/`: Rust CLI and release logic.
-- `tests/`: Rust integration tests.
+- `Cargo.toml`: virtual Cargo workspace with resolver `3`.
+- `Cargo.lock`: shared Rust dependency lockfile.
+- `crates/changenote/Cargo.toml`: Rust package metadata, explicit version, and dependencies.
+- `crates/changenote/src/`: Rust CLI and release logic.
+- `crates/changenote/tests/`: Rust integration tests and fixtures.
 - `pyproject.toml`: maturin package metadata and build configuration.
 - `uv.lock`: Python project dependency lockfile.
 - `python/changenote/`: Python wrapper module for the Rust CLI.
@@ -28,6 +29,7 @@ The repository contains one Rust Cargo package and one Python distribution that 
 - `scripts/route-release.py`: repository-specific release routing and preview checks.
 - `scripts/publish-crate.py`: repository-specific crates.io publication helper.
 - `scripts/prepare-python-release.py`: validated release version preparation for crates and wheels.
+- `crates/changenote/SKILL.md`: the single source for the bundled agent skill.
 - `tests/workflows/`, `tests/publication/`, `tests/python_release/`: CLI workflow and publication tests.
 
 ## Rust checks
@@ -42,7 +44,24 @@ cargo build --locked --release
 cargo run --locked -p changenote -- status
 ```
 
-The Rust package and executable names are `changenote`, so `cargo run --locked -p changenote -- status` works from the repository root. Rust build outputs go to `target/`.
+The Rust package and executable names are `changenote`, so `cargo run --locked -p changenote -- status` works from the repository root. Rust build outputs go to root `target/`. The member has no separate lockfile or inherited workspace version.
+
+To install from this checkout, run `cargo install --locked --path crates/changenote`.
+Registry installation remains `cargo install changenote --locked`.
+
+### Package resources
+
+The agent skill has one source, `crates/changenote/SKILL.md`. Edit that file directly. Agents can run `changenote skill` to read the embedded Markdown without a source checkout. There is no root skill copy or synchronization script.
+
+Root `README.md`, `LICENSE`, `schema.json`, `docs/notes.md`, and `docs/swift.md` remain canonical for the other package resources. After changing one of those files, copy the current resources into the crate:
+
+```sh
+cp README.md LICENSE schema.json crates/changenote/
+cp docs/notes.md docs/swift.md crates/changenote/docs/
+```
+
+Include the updated copies in the same commit. Publication tests compare their bytes and reject missing or stale copies. Documentation links use absolute repository URLs when the target guide is not shipped in the crate. The crate includes these resources and the hidden `.changenote` planning fixtures, so extracted Cargo and Python source archives need no repository resource paths or runtime downloads. CI packages the crate and runs its Rust tests from an extracted archive outside the checkout.
+The exact changelog fixtures keep their final blank-line separator; `.gitattributes` and the newline hook preserve these bytes.
 
 ## Workflow and publication checks
 
@@ -74,9 +93,9 @@ uvx --isolated --no-index --find-links dist/python-binary changenote --help
 
 The Python distribution `changenote`, with wrapper sources in `python/changenote`, packages the Rust executable using maturin `bin` bindings, like uv. It does not reimplement the CLI in Python. Compatible wheels require no Rust toolchain at runtime; source builds require Rust and Cargo. The optional `python -m changenote` runner invokes the installed executable.
 
-The Rust CLI and Python distribution share the `changenote` release plan and root `CHANGELOG.md`; the current single release package uses `v<version>` tags. Python has no independent version file or bump. Its manifest uses a dynamic version from root `Cargo.toml`, so Python wheel metadata and the included Rust CLI version match. The crates.io and PyPI jobs validate `Cargo.toml` against the saved release batch and check the local package version in `Cargo.lock`. Older releases configured with `VERSION` receive build-only Cargo version synchronization in a disposable checkout. The wheel check uses the validated version, not a separate version file. For manual publication, update the Cargo version and lockfile first.
+The Rust CLI and Python distribution share the `changenote` release plan and root `CHANGELOG.md`; the current single release package uses `v<version>` tags. Python has no independent version file or bump. Its manifest uses a dynamic version from `crates/changenote/Cargo.toml`, so Python wheel metadata and the included Rust CLI version match. The `.changenote` package path stays `.` with version file `crates/changenote/Cargo.toml`; this keeps the root changelog and repository-wide note coverage. The crates.io and PyPI jobs validate that manifest against the saved release batch and check the local package version in root `Cargo.lock`. Historical releases with a root Cargo package remain supported. Older releases configured with `VERSION` receive build-only Cargo version synchronization in a disposable checkout. The wheel check uses the validated version, not a separate version file. For manual publication, update the Cargo version and lockfile first.
 
-CI currently runs on Ubuntu only. It runs Rust format checks, lint checks, and tests, plus Python wrapper tests, binary wheel builds, and uvx checks with Python 3.14.
+CI checks run on Ubuntu; release wheel builds also use macOS and Windows. CI runs Rust format checks, lint checks, and tests, plus Python wrapper tests, binary wheel builds, and uvx checks with Python 3.14.
 
 ## Repository release workflow
 

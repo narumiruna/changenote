@@ -2,7 +2,7 @@
 
 Distribute the Rust changenote CLI as a Python package. The package uses [maturin](https://www.maturin.rs/) with `bindings = "bin"`, like [uv's Python distribution](https://github.com/astral-sh/uv/tree/main/python/uv).
 
-The PyPI distribution, executable, and Python module names are `changenote`. The module is in `python/changenote`, with package metadata in root `pyproject.toml`; Python does not use a uv workspace. Python wrapper changes use the `changenote` release name in `.changenote/config.json`; the wrapper has no independent version file or release plan. CLI logic stays in root `src/`.
+The PyPI distribution, executable, and Python module names are `changenote`. The module is in `python/changenote`, with package metadata in root `pyproject.toml`; Python does not use a uv workspace. Python wrapper changes use the `changenote` release name in `.changenote/config.json`; the wrapper has no independent version file or release plan. CLI logic stays in `crates/changenote/src/`, the only member of the root Cargo workspace.
 
 ## Run with uvx
 
@@ -35,13 +35,15 @@ uv run --locked python -m unittest discover -s python/tests
 
 The optional Python module runner finds the installed binary and passes arguments, the working directory, and the environment to it. It preserves the executable's exit code. It does not download a binary or use a system executable from `PATH`.
 
-uv cache keys include the Rust sources, Cargo manifests, and bundled `skills/changenote/SKILL.md`.
+uv cache keys include both Cargo manifests, the member sources and resources, and the canonical root inputs for the copied package resources.
+The skill is stored only in `crates/changenote/SKILL.md` and needs no synchronization; run `changenote skill` to retrieve it.
+For the other package resources, see [package resources](../docs/development.md#package-resources).
 Changes to these files cause local package rebuilds.
 `uv build` produces a source distribution and builds a wheel from it, including the Rust package sources and bundled skill.
 
-The Python distribution uses `dynamic = ["version"]`: maturin reads the version directly from root `Cargo.toml`. The wheel metadata and the packaged CLI's `--version` therefore use the same Rust crate version; do not add a separate Python manifest version.
+The Python distribution uses `dynamic = ["version"]`: maturin reads the version directly from `crates/changenote/Cargo.toml`, selected by `tool.maturin.manifest-path`. The wheel metadata and the packaged CLI's `--version` therefore use the same Rust crate version; do not add a separate Python manifest version.
 
-Release notes are collected under `changenote`, with the changelog at root `CHANGELOG.md`. The current single release package uses `v<version>` tags. The release version source is root `Cargo.toml`; `changenote version` also synchronizes the existing `Cargo.lock`. For manual publication, update the Rust crate version and lockfile first. Use a version that is not already published on PyPI.
+Release notes are collected under `changenote`, with the changelog at root `CHANGELOG.md`. The current single release package uses `v<version>` tags. The release version source is `crates/changenote/Cargo.toml`; `changenote version` also synchronizes the existing `Cargo.lock`. For manual publication, update the Rust crate version and lockfile first. Use a version that is not already published on PyPI.
 
 ## Automated publication
 
@@ -65,7 +67,7 @@ Supported wheels:
 
 Each wheel is installed and its CLI version is checked on its native runner. One Linux job also builds the source archive. Alpine/musl wheels and Windows ARM64 wheels are not included.
 
-Builds use the release commit returned by the publication Action, not the latest main tree. The preparation script from the workflow revision checks the configured version source against the saved batch and validates the local package version in `Cargo.lock`. Current releases use `Cargo.toml` and need no build-only version changes. Older releases configured with `VERSION` receive root Cargo package version synchronization in a disposable checkout. Dependency versions and committed release files are unchanged. Wheel metadata and the CLI version must match the validated release version.
+Builds use the release commit returned by the publication Action, not the latest main tree. The preparation script from the workflow revision checks the configured version source against the saved batch and validates the local package version in `Cargo.lock`. Current releases use `crates/changenote/Cargo.toml` and need no build-only version changes. Historical releases with root `Cargo.toml` also remain read-only. Older releases configured with `VERSION` receive root Cargo package version synchronization in a disposable checkout. Dependency versions and committed release files are unchanged. Wheel metadata and the CLI version must match the validated release version.
 
 Before enabling uploads:
 

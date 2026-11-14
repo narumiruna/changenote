@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/changenote/changenote/main/schema.json",
   "packages": {
-    "changenote": { "path": ".", "version_file": "Cargo.toml" }
+    "changenote": { "path": ".", "version_file": "crates/changenote/Cargo.toml" }
   },
   "changelog": {
     "source_repository": "https://github.com/changenote/changenote"

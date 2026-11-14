@@ -282,7 +282,7 @@ fn run() -> Result<()> {
                 println!("{tag}");
             }
         }
-        Commands::Skill => print!("{}", include_str!("../skills/changenote/SKILL.md")),
+        Commands::Skill => print!("{}", include_str!("../SKILL.md")),
         Commands::Completion { shell } => {
             let shell = match shell {
                 CompletionShell::Bash => clap_complete::Shell::Bash,

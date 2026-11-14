@@ -20,10 +20,7 @@ fn skill_prints_the_exact_bundled_markdown_without_configuration() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(output.stderr.is_empty());
-    assert_eq!(
-        output.stdout,
-        include_bytes!("../skills/changenote/SKILL.md").as_slice()
-    );
+    assert_eq!(output.stdout, include_bytes!("../SKILL.md").as_slice());
     assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
 }
 
@@ -31,9 +28,8 @@ fn skill_prints_the_exact_bundled_markdown_without_configuration() {
 fn skill_ignores_root_configuration_and_local_skill_files() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join(".changenote/config.json");
-    let local_skill = dir.path().join("skills/changenote/SKILL.md");
+    let local_skill = dir.path().join("SKILL.md");
     fs::create_dir_all(config.parent().unwrap()).unwrap();
-    fs::create_dir_all(local_skill.parent().unwrap()).unwrap();
     fs::write(&config, "invalid configuration").unwrap();
     fs::write(&local_skill, "local skill must not be read\n").unwrap();
 
@@ -45,10 +41,7 @@ fn skill_ignores_root_configuration_and_local_skill_files() {
         let output = cli(dir.path(), &args);
         assert!(output.status.success(), "{args:?}");
         assert!(output.stderr.is_empty());
-        assert_eq!(
-            output.stdout,
-            include_bytes!("../skills/changenote/SKILL.md").as_slice()
-        );
+        assert_eq!(output.stdout, include_bytes!("../SKILL.md").as_slice());
     }
 
     assert_eq!(fs::read_to_string(config).unwrap(), "invalid configuration");

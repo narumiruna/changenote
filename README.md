@@ -32,13 +32,13 @@ Written in Rust. Inspired by [Changesets](https://github.com/changesets/changese
    changenote --help
    ```
 
-Git is required for `check`, `tag`, and opt-in [commit source links](docs/notes.md#automatic-commit-source-links).
+Git is required for `check`, `tag`, and opt-in [commit source links](https://github.com/changenote/changenote/blob/main/docs/notes.md#automatic-commit-source-links).
 Source links require `changelog.source_repository` with a canonical HTTPS GitHub repository URL and complete local note history.
 Without this setting, planning and versioning need no Git history for source attribution.
 Plain-text and Xcode configuration version files need no language runtime or package manager.
-Manifest releases with a supported existing lockfile need the corresponding [package manager and offline cache](docs/configuration.md#automatic-lockfile-synchronization).
+Manifest releases with a supported existing lockfile need the corresponding [package manager and offline cache](https://github.com/changenote/changenote/blob/main/docs/configuration.md#automatic-lockfile-synchronization).
 
-For Python wheels and `uvx` usage, see the [Python distribution guide](python/README.md).
+For Python wheels and `uvx` usage, see the [Python distribution guide](https://github.com/changenote/changenote/blob/main/python/README.md).
 
 ## Quick start
 
@@ -59,7 +59,7 @@ changenote init --name pkg-a --version-file Cargo.toml
 ```
 
 Use only one initialization command.
-See [configuration](docs/configuration.md) for other formats and monorepos.
+See [configuration](https://github.com/changenote/changenote/blob/main/docs/configuration.md) for other formats and monorepos.
 
 ### 2. Add a change note
 
@@ -81,7 +81,7 @@ Commit the configuration, version file, and note with your change.
 Add notes for changes that need a release, according to the repository's policy.
 Documentation-only changes, test-only changes, and internal refactors without release impact normally need no note.
 Do not create empty notes as no-release markers.
-See [when a note is needed](docs/notes.md#decide-whether-a-note-is-needed).
+See [when a note is needed](https://github.com/changenote/changenote/blob/main/docs/notes.md#decide-whether-a-note-is-needed).
 
 ### 3. Review the plan
 
@@ -114,7 +114,7 @@ changenote tag
 
 The tag is `v0.1.0`.
 `tag` requires a clean working tree; it does not push tags or publish artifacts.
-See [release behavior and recovery](docs/releases.md) before automating releases.
+See [release behavior and recovery](https://github.com/changenote/changenote/blob/main/docs/releases.md) before automating releases.
 
 ## Commands
 
@@ -204,7 +204,7 @@ The content is embedded at build time and matches the installed CLI version; it 
 
 | Skill | Purpose |
 | --- | --- |
-| [changenote](skills/changenote/SKILL.md) | CLI change notes, configuration, release plans, versions, and tags, plus GitHub Actions setup, checks, release PRs, publication, and recovery. |
+| [changenote](https://github.com/changenote/changenote/blob/main/crates/changenote/SKILL.md) | CLI change notes, configuration, release plans, versions, and tags, plus GitHub Actions setup, checks, release PRs, publication, and recovery. |
 
 The `changenote` skill replaces `changenote-manage-releases`, `changenote-cli`, and `changenote-action`.
 Update installed skills and exact-name references to `changenote`.
@@ -214,22 +214,23 @@ The old skill paths are no longer provided.
 
 | Guide | Contents |
 | --- | --- |
-| [Configuration](docs/configuration.md) | Monorepos, version formats, additional outputs, tags, lockfiles, and version groups. |
-| [Change notes and changelogs](docs/notes.md) | Release policy, multiple packages, automatic names, note types, sections, and templates. |
-| [Release behavior](docs/releases.md) | Version calculation, saved batches, changelog entries, diagnostics, safety, and recovery. |
-| [PR note checks](docs/checks.md) | CLI coverage rules, exemptions, file patterns, and a link to the check Action. |
+| [Configuration](https://github.com/changenote/changenote/blob/main/docs/configuration.md) | Monorepos, version formats, additional outputs, tags, lockfiles, and version groups. |
+| [Change notes and changelogs](https://github.com/changenote/changenote/blob/main/docs/notes.md) | Release policy, multiple packages, automatic names, note types, sections, and templates. |
+| [Release behavior](https://github.com/changenote/changenote/blob/main/docs/releases.md) | Version calculation, saved batches, changelog entries, diagnostics, safety, and recovery. |
+| [PR note checks](https://github.com/changenote/changenote/blob/main/docs/checks.md) | CLI coverage rules, exemptions, file patterns, and a link to the check Action. |
 | [GitHub Actions](https://github.com/changenote/action/blob/main/docs/github-actions.md) | Release workflows, project scripts, tool setup, and external CI. |
-| [Go modules](docs/go.md) | Root and nested modules, v2+ paths, and tag prefixes. |
-| [Swift packages and Apple apps](docs/swift.md) | Xcode version files, build numbers, and Swift Package Manager tags. |
-| [Python distribution](python/README.md) | Wheels, `uvx`, wrapper development, and PyPI publication. |
-| [Development](docs/development.md) | Repository layout, local checks, and this repository's release workflow. |
+| [Go modules](https://github.com/changenote/changenote/blob/main/docs/go.md) | Root and nested modules, v2+ paths, and tag prefixes. |
+| [Swift packages and Apple apps](https://github.com/changenote/changenote/blob/main/docs/swift.md) | Xcode version files, build numbers, and Swift Package Manager tags. |
+| [Python distribution](https://github.com/changenote/changenote/blob/main/python/README.md) | Wheels, `uvx`, wrapper development, and PyPI publication. |
+| [Development](https://github.com/changenote/changenote/blob/main/docs/development.md) | Repository layout, local checks, and this repository's release workflow. |
 
 changenote does not update internal dependency requirements, propagate dependency changes, or support prereleases.
 Primary and additional version files must contain explicit stable SemVer versions.
 
 ## Development
 
-This repository contains one Rust Cargo package and a Python distribution of its executable; neither uses a workspace.
-See the [development guide](docs/development.md) for the layout, test commands, and maintainer release procedures.
+This repository uses one Cargo workspace with one Rust package in `crates/changenote/`.
+The Python distribution packages the same executable and does not use a uv workspace.
+See the [development guide](https://github.com/changenote/changenote/blob/main/docs/development.md) for the layout, test commands, and maintainer release procedures.
 
 The project uses the [MIT license](LICENSE).

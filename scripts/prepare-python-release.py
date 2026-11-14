@@ -10,16 +10,19 @@ from pathlib import Path
 def prepare(root: Path) -> str:
     config = json.loads((root / ".changenote/config.json").read_text())
     source = config["packages"]["changenote"]
-    if source["path"] != "." or source["version_file"] not in ("Cargo.toml", "VERSION"):
-        raise ValueError("Expected a root Cargo.toml or VERSION release source")
-    manifest_path = root / "Cargo.toml"
+    version_file = source["version_file"]
+    if source["path"] != "." or version_file not in (
+        "Cargo.toml", "crates/changenote/Cargo.toml", "VERSION"
+    ):
+        raise ValueError("Expected the changenote Cargo manifest or legacy root VERSION")
+    manifest_path = root / ("Cargo.toml" if version_file == "VERSION" else version_file)
     lock_path = root / "Cargo.lock"
     manifest = manifest_path.read_text()
     lock = lock_path.read_text()
     package = tomllib.loads(manifest)["package"]
     version = (
         package["version"]
-        if source["version_file"] == "Cargo.toml"
+        if version_file != "VERSION"
         else (root / "VERSION").read_text().strip()
     )
     if not isinstance(version, str) or not re.fullmatch(
@@ -40,7 +43,7 @@ def prepare(root: Path) -> str:
     if package["version"] != locked[0]["version"]:
         raise ValueError("Cargo.toml and Cargo.lock versions must match")
 
-    if source["version_file"] == "Cargo.toml":
+    if version_file != "VERSION":
         return version
 
     # Legacy VERSION releases need build-only synchronization of the root package.
