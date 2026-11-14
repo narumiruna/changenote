@@ -29,7 +29,7 @@ The repository uses one Cargo workspace with one member, `crates/changenote`. Th
 - `scripts/route-release.py`: repository-specific release routing and preview checks.
 - `scripts/publish-crate.py`: repository-specific crates.io publication helper.
 - `scripts/prepare-python-release.py`: validated release version preparation for crates and wheels.
-- `scripts/sync-crate-resources.py`: copies canonical root resources into the Cargo package.
+- `crates/changenote/SKILL.md`: the single source for the bundled agent skill.
 - `tests/workflows/`, `tests/publication/`, `tests/python_release/`: CLI workflow and publication tests.
 
 ## Rust checks
@@ -51,15 +51,16 @@ Registry installation remains `cargo install changenote --locked`.
 
 ### Package resources
 
-Root `README.md`, `LICENSE`, `schema.json`, `skills/changenote/SKILL.md`, `docs/notes.md`, and `docs/swift.md` are canonical. Their copies under `crates/changenote/` are generated package resources; do not edit those copies directly.
-After changing a canonical file, run:
+The agent skill has one source, `crates/changenote/SKILL.md`. Edit that file directly. Agents can run `changenote skill` to read the embedded Markdown without a source checkout. There is no root skill copy or synchronization script.
+
+Root `README.md`, `LICENSE`, `schema.json`, `docs/notes.md`, and `docs/swift.md` remain canonical for the other package resources. After changing one of those files, copy the current resources into the crate:
 
 ```sh
-uv run --no-project python scripts/sync-crate-resources.py
-uv run --no-project python scripts/sync-crate-resources.py --check
+cp README.md LICENSE schema.json crates/changenote/
+cp docs/notes.md docs/swift.md crates/changenote/docs/
 ```
 
-Include the updated copies in the same commit. Publication tests reject missing or stale copies. The crate includes these resources and the hidden `.changenote` planning fixtures, so extracted Cargo and Python source archives need no repository resource paths or runtime downloads. CI packages the crate and runs its Rust tests from an extracted archive outside the checkout.
+Include the updated copies in the same commit. Publication tests compare their bytes and reject missing or stale copies. The crate includes these resources and the hidden `.changenote` planning fixtures, so extracted Cargo and Python source archives need no repository resource paths or runtime downloads. CI packages the crate and runs its Rust tests from an extracted archive outside the checkout.
 The exact changelog fixtures keep their final blank-line separator; `.gitattributes` and the newline hook preserve these bytes.
 
 ## Workflow and publication checks

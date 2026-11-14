@@ -35,8 +35,9 @@ uv run --locked python -m unittest discover -s python/tests
 
 The optional Python module runner finds the installed binary and passes arguments, the working directory, and the environment to it. It preserves the executable's exit code. It does not download a binary or use a system executable from `PATH`.
 
-uv cache keys include both Cargo manifests, the member sources and resources, and their canonical root inputs, including `skills/changenote/SKILL.md`.
-After changing a canonical resource, run `uv run --no-project python scripts/sync-crate-resources.py` before building; see [package resources](../docs/development.md#package-resources).
+uv cache keys include both Cargo manifests, the member sources and resources, and the canonical root inputs for the copied package resources.
+The skill is stored only in `crates/changenote/SKILL.md` and needs no synchronization; run `changenote skill` to retrieve it.
+For the other package resources, see [package resources](../docs/development.md#package-resources).
 Changes to these files cause local package rebuilds.
 `uv build` produces a source distribution and builds a wheel from it, including the Rust package sources and bundled skill.
 

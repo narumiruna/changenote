@@ -120,7 +120,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), f"changenote {version('changenote')}")
 
     def test_installed_module_prints_bundled_skill(self):
-        expected = Path(__file__).resolve().parents[2] / "skills/changenote/SKILL.md"
+        expected = Path(__file__).resolve().parents[2] / "crates/changenote/SKILL.md"
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(
                 [sys.executable, "-m", "changenote", "skill"],

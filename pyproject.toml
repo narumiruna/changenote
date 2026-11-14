@@ -28,7 +28,6 @@ cache-keys = [
     { file = "README.md" },
     { file = "LICENSE" },
     { file = "schema.json" },
-    { file = "skills/changenote/SKILL.md" },
     { file = "docs/notes.md" },
     { file = "docs/swift.md" },
 ]
