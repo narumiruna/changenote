@@ -12,6 +12,7 @@ mod patterns;
 mod planning;
 mod release;
 mod sections;
+mod sources;
 mod template;
 mod transaction;
 mod version_file;

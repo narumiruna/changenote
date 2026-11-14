@@ -57,6 +57,14 @@ You can configure [note types and changelog sections](notes.md#note-types-and-ch
 Keep changelog output enabled for built-in GitHub publication.
 Disabling output does not preserve consumed summaries elsewhere.
 
+Optional [commit source links](notes.md#automatic-commit-source-links) use the checked-out note history and `changelog.source_repository`.
+Source checks for all consumed notes finish before version files, lockfiles, changelogs, or saved batches change.
+Missing source evidence is an error for versioning, not permission to use the current branch tip.
+Publication reconstructs links from the selected historical parent and compares the complete release tree.
+A later configuration or remote change does not replace the historical repository URL.
+If the linked tree cannot be reproduced, verification fails before remote writes.
+GitHub Release text is extracted from the verified committed changelog, not regenerated with new source lookups.
+
 ## Read a release entry
 
 ```sh

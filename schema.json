@@ -64,6 +64,11 @@
           "minLength": 1,
           "default": "{summary}"
         },
+        "source_repository": {
+          "description": "Canonical https://github.com/<owner>/<repo> URL. Enables deterministic note-source commit links from complete local Git history. Omission preserves existing output without source lookups.",
+          "type": "string",
+          "pattern": "^https://github\\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"
+        },
         "sections": {
           "type": "array",
           "minItems": 1,

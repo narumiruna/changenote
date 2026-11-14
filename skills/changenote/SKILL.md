@@ -103,7 +103,11 @@ Use ASD-STE100 principles for English note text; full compliance is not required
 Give priority to technical accuracy and clear meaning.
 Keep required technical names and terms, and use conventional release-note verbs such as `Add`, `Fix`, and `Remove`.
 
-- Describe the change and its effect on users, not the implementation history.
+- Use a separate note for each independent change, even when the package and bump are the same.
+  - Update an existing note only for the same change; do not combine unrelated work from another PR.
+- Start with a short summary of the change and its effect on users, not the implementation history.
+- State required user actions and known limits when the change evidence supports them.
+  - Verify current compatibility before presenting a past blocker as a current limit.
 - Use active voice and one topic per sentence.
 - Aim for 25 words or fewer in descriptive sentences and 20 words or fewer in instructions.
   - Use longer sentences when necessary to keep the technical meaning accurate.
@@ -112,8 +116,14 @@ Keep required technical names and terms, and use conventional release-note verbs
 - Put each sentence on a separate line.
 - Write commands, paths, option names, and API names in backticks.
 - To include a PR reference, add a Markdown link to the note summary, such as `Fix output ([#123](https://github.com/owner/repo/pull/123))`.
-  - Use the actual repository URL and a verified PR number; omit the reference if the PR is not known.
+  - Use the actual repository URL and verified PR numbers; preserve several links when several PRs explain the change.
+  - Omit unknown references; do not guess a PR number or substitute the release PR for the implementation PR.
   - changenote does not look up or add PR numbers automatically.
+- If `changelog.source_repository` is configured, generated sections also contain automatic commit links from local note history.
+  - These links identify note sources, not necessarily the complete implementation.
+  - Commit new or changed notes before an authorized version operation and provide complete Git history.
+  - Before commit, status can show the summary without automatic links; this does not prove release readiness.
+  - Do not change configuration just to add a note. See the [source-link rules](https://github.com/changenote/changenote/blob/main/docs/notes.md#automatic-commit-source-links).
 - For a breaking change, identify what no longer works and give the required migration steps.
   - Use imperative sentences for instructions.
   - Select the bump from the repository's compatibility policy; do not assume every breaking change requires `major`.
@@ -197,14 +207,21 @@ Do not move existing tags, push, create GitHub Releases, or publish artifacts wi
 
 | Goal | Entry point | CLI setup |
 | --- | --- | --- |
-| Manage release PRs and optionally publish tags and GitHub Releases | `changenote/action/release` | Installs the selected CLI and prepares package-manager caches. |
-| Manage release PRs with optional project publication scripts | `changenote/action` | Installs the selected CLI; caller prepares project tools. |
-| Check contributor PR notes without writes | `changenote/action/check` | Installs the selected CLI. |
-| Inspect the latest validated publication batch without remote writes | `changenote/action/preview` | Installs the selected CLI. |
-| Publish tags and GitHub Releases for a validated batch | `changenote/action/publish` | Installs the selected CLI. |
+| Configure the complete release workflow or verified project scripts | `changenote/action` | Installs or reuses the CLI; built-in operations prepare project tools and caches. |
+| Install one trusted CLI for reuse within a job | `changenote/action/setup` | Returns `cli-path` and the exact installed `version`. |
+| Prepare project tools and offline lockfile caches only | `changenote/action/prepare` | Installs or reuses the CLI; creates no PRs, tags, or Releases. |
+| Manage the Release PR only | `changenote/action/manage-pr` | Installs or reuses the CLI; caller prepares project tools. |
+| Return a verified batch and its GitHub publication state | `changenote/action/select` | Installs or reuses the CLI; caller prepares project tools. |
+| Check contributor PR notes without writes | `changenote/action/check` | Installs or reuses the CLI. |
+| Publish tags and GitHub Releases for a validated batch | `changenote/action/publish` | Installs or reuses the CLI; caller prepares project tools. |
+| Keep an existing built-in release workflow | `changenote/action/release` | Compatibility entry point for root's built-in operations. |
+| Keep an existing publication preview | `changenote/action/preview` | Compatibility name for the same inspection as `/select`. |
 
-Use the [lower-level reference](https://github.com/changenote/action/blob/main/docs/github-actions-reference.md) for root, preview, and publish inputs and recovery.
-The root Action does not publish when both `publish-script` and `release-script` are absent.
+Use the [lower-level reference](https://github.com/changenote/action/blob/main/docs/github-actions-reference.md) for separate operations and recovery.
+Root defaults to `operation: hooks`, preserving managed-merge scripts without built-in publication.
+In `hooks`, the root Action does not publish when both `publish-script` and `release-script` are absent.
+Explicitly choose `operation: auto` for root's built-in PR management and GitHub publication.
+Nonempty script inputs are rejected outside `hooks`; use separate Actions when CI or approvals divide the stages.
 With both scripts, `publish-script` runs first; a failure prevents `release-script`.
 The `/release` Action has no script inputs.
 Built-in publication creates Git tags and GitHub Releases, not registry uploads.
@@ -213,17 +230,23 @@ Built-in publication creates Git tags and GitHub Releases, not registry uploads.
 
 - Make requested local workflow edits without dispatching the workflow.
 - Do not enable automatic publication unless the user requests it.
-  - Use `operation: manage-pr` for PR-only `/release` setup.
-  - Its default `auto` operation can publish the latest incomplete validated batch on base-branch pushes, even after unrelated later commits.
-  - On manual events, `auto` only manages the PR; `retry-publication` explicitly retries publication.
+  - Use `/manage-pr` or root with `operation: manage-pr` for PR-only setup.
+  - Root defaults to `hooks`; its `auto` operation is explicit.
+  - The `/release` compatibility path still defaults to `auto`.
+  - `auto` can publish the latest incomplete validated batch on base-branch pushes, even after unrelated later commits.
+  - On manual events, `auto` only manages the PR; `retry-publication` explicitly retries built-in publication.
 - Pin Actions to reviewed full commit SHAs from `changenote/action`, not CLI repository SHAs.
   - Pin other external Actions to reviewed full SHAs as well.
   - If a reviewed SHA is unavailable, leave a clearly marked template and report that it is not ready to run.
 - Select compatible CLI and Action versions when upgrading release tooling; their release versions are independent.
-  - All five current entry points accept `version` and install the CLI from crates.io outside the consumer checkout.
+  - All current entry points accept `version`; standalone operation Actions install a prebuilt CLI wheel from PyPI with uv outside the consumer checkout.
+  - To reuse one installation, pass the trusted same-job `cli-path` from `/setup`; do not accept an executable path from contributor data.
+  - An exact `version` must match the reused CLI.
+  - With `latest` and an explicit path, reuse validates the installed stable version without resolving PyPI again.
+  - Do not transfer executable paths between jobs.
   - `version` defaults to `latest`, the latest stable published CLI; pinning the Action SHA does not pin this version.
   - For repeatable runs, use the same exact stable CLI version across PR generation, selection, and publication.
-  - Exact versions with or without a leading `v` are accepted; ranges, Git revisions, URLs, and prereleases are not.
+  - Exact versions require a leading `v`; bare versions, ranges, Git revisions, URLs, and prereleases are rejected.
   - Older Action revisions can require caller installation or use a fixed CLI source pin; follow their metadata instead of assuming `version` exists.
   - Never build the CLI from contributor code.
 - Use Linux runners and restrict release management and publication to the selected base branch's push and manual events.
@@ -239,7 +262,10 @@ Built-in publication creates Git tags and GitHub Releases, not registry uploads.
   - When generated PRs must trigger CI, use an authorized GitHub App token or PAT through `github-token`; the default `GITHUB_TOKEN` does not trigger PR workflows.
 - Keep changelog output enabled for built-in publication.
 - Prepare the same package-manager versions and required caches for PR generation and release replay.
-  - Root and lower-level Actions require caller-owned project-tool setup; `/release` prepares supported lockfile caches.
+  - Root's built-in operations and `/release` prepare supported lockfile caches unless `prepare: 'false'` selects caller-owned preparation.
+  - For composed workflows, run `/prepare` with the matching environment scope before `/manage-pr`, `/select`, or `/publish`.
+  - The `hooks` operation retains caller-owned project setup.
+  - Preparation for a saved batch includes only consumed notes, not unrelated notes retained for the next release.
 
 #### Contributor Note Checks
 
@@ -252,12 +278,15 @@ Treat notes, PR titles, branch names, and other contributor data as data, not sh
 
 #### External CI and Project Scripts
 
-When CI must validate the exact release commit, use `/release` operations `select`, external CI, then `publish` with the selected `expected-release-commit`.
-Keep `manage-pr` independent when PR-management failures must not block publication.
+When CI must validate the exact release commit, use `/select`, external CI, then `/publish` with the selected `expected-release-commit`.
+Root and `/release` expose equivalent built-in operations when a composed workflow is not needed.
+Selection always returns the verified batch, including completed GitHub publication.
+Gate automatic GitHub work with `publication-needed`, not the presence of `release-commit`; registry work has separate completion state.
+Keep `/manage-pr` independent when PR-management failures must not block publication.
 Do not use `auto` as proof that project CI passed.
 For multiple packages, select the package explicitly from the `releases` JSON array; do not assume one global version or use its first entry blindly.
 
-The root Action runs configured scripts only for a verified managed release merge in the triggering push range.
+In `operation: hooks`, the root Action runs configured scripts only for a verified managed release merge in the triggering push range.
 Manual dispatch manages its PR only; it does not run those scripts.
 Scripts run at the verified release commit in a temporary worktree, not the caller's checkout; earlier untracked build files are not copied.
 The caller supplies trusted scripts, tools, artifacts, credentials, and tests before upload.
@@ -266,7 +295,7 @@ Scripts must handle repeated execution and partial publication safely.
 ### Validate and Recover
 
 Run available repository workflow checks, including `actionlint` when available, and inspect the diff for pins, inputs, event filters, permissions, and accidental publication changes.
-For an authorized read-only hosted inspection, use `/preview` or `/release` with `operation: select`.
+For an authorized read-only hosted inspection, use `/select`, its `/preview` compatibility name, or root with `operation: select`.
 A successful preview does not authorize publication or prove CI success; read Action outputs only after a successful step.
 
 Dispatch a workflow, push branches or tags, create or merge PRs, create GitHub Releases, or run publication scripts only when the user explicitly requests that specific remote action.

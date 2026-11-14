@@ -125,6 +125,25 @@ The Action repository's `/release` entry point instead installs its separate tru
 
 The CLI workflow publishes the Rust package from the validated release commit to crates.io with `cargo publish --locked` and Trusted Publishing. The `rust-lang/crates-io-auth-action` Action uses GitHub OIDC to obtain a short-lived token. Only the crates.io and PyPI upload jobs have `id-token: write`. The crates.io upload step receives its short-lived token through the `CARGO_REGISTRY_TOKEN` environment variable. No crates.io token secret is required. The workflow also builds Python distributions from that commit and uploads them to PyPI with `uv publish --trusted-publishing always` and GitHub OIDC, without a PyPI token secret. See the [Python distribution guide](../python/README.md) for supported platforms and required PyPI settings. This routing policy is repository-specific.
 
+## Source-link rollout
+
+Local source-link tests use disposable Git histories and a locally built wheel installed in an isolated test environment.
+Action contract tests use local remotes and a mocked GitHub API, not production publication.
+These checks do not verify hosted event delivery, permissions, branch rules, registry access, or end-to-end publication.
+They do not measure agent task success for the updated skill.
+
+1. The CLI release maintainer must publish compatible artifacts, including PyPI wheels, after a separate release authorization.
+   - The expected result is an installable CLI that accepts `changelog.source_repository`.
+   - Do not enable the setting in production before those artifacts exist.
+2. The repository maintainer must select the same exact compatible CLI version for generation, preview, and publication before an authorized rollout.
+   - If Action implementation changes are needed, review its published commit SHA separately.
+   - Test hosted event delivery, permissions, branch rules, and publication in an authorized disposable repository before production use.
+   - Local validation does not authorize a production configuration change, workflow dispatch, or publication.
+
+To downgrade tooling before generating a batch, first remove `changelog.source_repository`; older CLIs reject the field.
+For a committed batch, retain compatible tooling and its historical configuration until publication completes.
+Do not remove links from its generated tree, bypass replay, edit saved batches, move tags, or rewrite published Releases.
+
 ## Registry setup
 
 ### crates.io
