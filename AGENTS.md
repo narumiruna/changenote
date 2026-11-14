@@ -7,6 +7,9 @@
   - Keep required technical names.
 - Use indented sub-items for rules that depend on a parent rule.
 - Read `README.md` for CLI usage, workspace layout, and release behavior.
+- Before opening a pull request, review `AGENTS.md`, `README.md`, and other relevant documentation.
+  - Update affected documentation to match the implementation and include the updates in the same pull request.
+  - If no documentation updates are needed, state the reason in the pull request description.
 
 ## Commands
 
