@@ -1,3 +1,23 @@
+## 0.14.0
+
+### Minor Changes
+
+- Sources: [2e7a860f1e7a](https://github.com/changenote/changenote/commit/2e7a860f1e7a20c30b1fcea9659754cfafc96146)
+  
+  Move the Rust CLI into a single-member Cargo workspace while preserving Cargo and Python distribution builds.
+  To install from a source checkout, use `cargo install --locked --path crates/changenote`; registry installation commands are unchanged.
+  The source skill moves from `skills/changenote/SKILL.md` to `crates/changenote/SKILL.md`.
+  Update direct source-path references, or run `changenote skill` to retrieve the bundled Markdown without a source checkout.
+
+### Patch Changes
+
+- Sources: [132acee666d9](https://github.com/changenote/changenote/commit/132acee666d99e2413173c8bb70613fe6c80b9d7)
+  
+  Fix the bundled skill guidance to prefer `changenote/action` and its inputs for release workflows.
+  Use standalone Actions only for requirements that root cannot satisfy, and add only the necessary entry points.
+  Document PR-only defaults, explicit publication controls, and guarded independent CI and publication.
+  Require durable routing or a recovery path before enabling scripts that can be skipped when a pending run is replaced.
+
 ## 0.13.1
 
 ### Patch Changes
