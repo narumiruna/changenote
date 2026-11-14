@@ -1,0 +1,33 @@
+[package]
+name = "changenote"
+version = "0.13.1"
+edition = "2024"
+description = "Language-independent change notes and releases"
+license = "MIT"
+readme = "README.md"
+# Include hidden change-note fixtures and synchronized repository resources.
+include = [
+    "src/**",
+    "tests/**",
+    "skills/changenote/SKILL.md",
+    "docs/notes.md",
+    "docs/swift.md",
+    "schema.json",
+    "README.md",
+    "LICENSE",
+]
+
+[dependencies]
+anyhow = "1"
+getrandom = "0.4"
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+semver = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+toml_edit = "0.25"
+serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
+globset = "0.4.20"
+
+[dev-dependencies]
+tempfile = "3"

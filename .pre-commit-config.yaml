@@ -4,6 +4,8 @@ repos:
     hooks:
       - id: check-yaml
       - id: end-of-file-fixer
+        # Exact changelog fixtures require a final blank-line separator.
+        exclude: ^crates/changenote/tests/fixtures/planning/[^/]+/expected-[^/]+-CHANGELOG\.md$
       - id: mixed-line-ending
         args: ["--fix=lf"]
       - id: trailing-whitespace

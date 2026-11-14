@@ -94,6 +94,10 @@ class Metadata(unittest.TestCase):
             "cargo run --locked -p changenote -- status",
         ):
             self.assertIn(gate, rust)
+        archive = next(step for step in jobs["check"]["steps"] if step.get("name") == "Check crate archive")
+        self.assertIn("cargo package --locked -p changenote", archive["run"])
+        self.assertIn("tar -xzf target/package/changenote-*.crate", archive["run"])
+        self.assertIn('cargo test --locked --manifest-path "$archive"/changenote-*/Cargo.toml', archive["run"])
         distribution = [step.get("run") for step in jobs["python"]["steps"]]
         for gate in (
             "uv sync --locked",
@@ -102,6 +106,29 @@ class Metadata(unittest.TestCase):
             "uvx --isolated --no-index --find-links dist/python-binary changenote --help",
         ):
             self.assertIn(gate, distribution)
+
+    def test_changelog_fixture_newlines_are_preserved(self):
+        config = read_yaml(ROOT / ".pre-commit-config.yaml")
+        hook = next(
+            hook for repo in config["repos"] for hook in repo["hooks"]
+            if hook["id"] == "end-of-file-fixer"
+        )
+        exclusion = re.compile(hook["exclude"])
+        fixtures = list((ROOT / "crates/changenote/tests/fixtures/planning").glob(
+            "*/expected-*-CHANGELOG.md"
+        ))
+        self.assertTrue(fixtures)
+        for fixture in fixtures:
+            with self.subTest(fixture=fixture.name):
+                self.assertRegex(fixture.relative_to(ROOT).as_posix(), exclusion)
+                self.assertTrue(fixture.read_bytes().endswith(b"\n\n"))
+        for path in ("README.md", "crates/changenote/README.md",
+                     "crates/changenote/tests/fixtures/planning/provenance/fixture/.changenote/a.md"):
+            self.assertIsNone(exclusion.search(path))
+        self.assertIn(
+            "crates/changenote/tests/fixtures/planning/**/expected-*-CHANGELOG.md -text whitespace=-blank-at-eof",
+            (ROOT / ".gitattributes").read_text(),
+        )
 
     def test_triggers_concurrency_and_permissions(self):
         workflow = read_yaml(ROOT / ".github/workflows/release.yml")
