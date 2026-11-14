@@ -22,7 +22,7 @@ fn skill_prints_the_exact_bundled_markdown_without_configuration() {
     assert!(output.stderr.is_empty());
     assert_eq!(
         output.stdout,
-        include_bytes!("../skills/changenote/SKILL.md").as_slice()
+        include_bytes!("../assets/changenote.SKILL.md").as_slice()
     );
     assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
 }
@@ -47,7 +47,7 @@ fn skill_ignores_root_configuration_and_local_skill_files() {
         assert!(output.stderr.is_empty());
         assert_eq!(
             output.stdout,
-            include_bytes!("../skills/changenote/SKILL.md").as_slice()
+            include_bytes!("../assets/changenote.SKILL.md").as_slice()
         );
     }
 

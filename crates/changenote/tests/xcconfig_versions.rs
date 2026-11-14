@@ -252,7 +252,7 @@ fn additional_xcconfig_must_match_the_primary_version() {
 
 #[test]
 fn documented_app_and_swift_package_configurations_work() {
-    let guide = include_str!("../docs/swift.md");
+    let guide = include_str!("../../../docs/swift.md");
     let xcconfig = guide
         .split_once("```xcconfig\n")
         .unwrap()

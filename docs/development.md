@@ -8,17 +8,23 @@ Action implementation, consumer examples, and integration tests are maintained i
 - [Rust checks](#rust-checks)
 - [Workflow and publication checks](#workflow-and-publication-checks)
 - [Python distribution](#python-distribution)
+- [Workspace migration verification](#workspace-migration-verification)
 - [Repository release workflow](#repository-release-workflow)
 - [Registry setup](#registry-setup)
 
 ## Repository layout
 
-The repository contains one Rust Cargo package and one Python distribution that packages its executable. Neither uses a workspace; the CLI still supports release plans for other monorepos.
+The repository uses a Cargo workspace with one Rust package and one Python distribution that packages its executable. Python does not use a uv workspace.
 
-- `Cargo.toml`: Rust package metadata, dependencies, and release version source.
-- `Cargo.lock`: Rust dependency lockfile.
-- `src/`: Rust CLI and release logic.
-- `tests/`: Rust integration tests.
+- `Cargo.toml`: virtual workspace with `crates/changenote` as its only member and default member.
+- `Cargo.lock`: shared Rust dependency lockfile.
+- `crates/changenote/Cargo.toml`: Rust package metadata, dependencies, and explicit release version.
+- `crates/changenote/src/`: Rust CLI and release logic.
+- `crates/changenote/tests/`: Rust integration tests and planning fixtures.
+  - Golden `expected-*-CHANGELOG.md` fixtures retain the generated trailing blank line. The end-of-file hook excludes only these byte-exact files; tests verify their bytes and the exclusion scope.
+- `skills/changenote/SKILL.md` and root `LICENSE`: canonical public skill and license.
+  - Keep `crates/changenote/assets/changenote.SKILL.md` and `crates/changenote/LICENSE` byte-identical to these files. Publication tests reject different copies.
+  - The package-local copies let Cargo and Python source archives build without the surrounding repository.
 - `pyproject.toml`: maturin package metadata and build configuration.
 - `uv.lock`: Python project dependency lockfile.
 - `python/changenote/`: Python wrapper module for the Rust CLI.
@@ -28,7 +34,8 @@ The repository contains one Rust Cargo package and one Python distribution that 
 - `scripts/route-release.py`: repository-specific release routing and preview checks.
 - `scripts/publish-crate.py`: repository-specific crates.io publication helper.
 - `scripts/prepare-python-release.py`: validated release version preparation for crates and wheels.
-- `tests/workflows/`, `tests/publication/`, `tests/python_release/`: CLI workflow and publication tests.
+- `tests/workflows/`, `tests/publication/`, `tests/python_release/`: CLI workflow, metadata, resource, and publication tests.
+- `tests/distribution/`: standalone Cargo and Python source archive build/install tests.
 
 ## Rust checks
 
@@ -68,15 +75,36 @@ uv sync --locked
 uv run --locked changenote status
 uv run --locked python -m changenote --help
 uv run --locked python -m unittest discover -s python/tests
+uv run --no-project python -m unittest discover -s tests/distribution -v
 uv build --out-dir dist/python-binary
 uvx --isolated --no-index --find-links dist/python-binary changenote --help
 ```
 
 The Python distribution `changenote`, with wrapper sources in `python/changenote`, packages the Rust executable using maturin `bin` bindings, like uv. It does not reimplement the CLI in Python. Compatible wheels require no Rust toolchain at runtime; source builds require Rust and Cargo. The optional `python -m changenote` runner invokes the installed executable.
 
-The Rust CLI and Python distribution share the `changenote` release plan and root `CHANGELOG.md`; the current single release package uses `v<version>` tags. Python has no independent version file or bump. Its manifest uses a dynamic version from root `Cargo.toml`, so Python wheel metadata and the included Rust CLI version match. The crates.io and PyPI jobs validate `Cargo.toml` against the saved release batch and check the local package version in `Cargo.lock`. Older releases configured with `VERSION` receive build-only Cargo version synchronization in a disposable checkout. The wheel check uses the validated version, not a separate version file. For manual publication, update the Cargo version and lockfile first.
+The Rust CLI and Python distribution share the `changenote` release plan and root `CHANGELOG.md`; the current single release package uses `v<version>` tags. Python has no independent version file or bump. Its manifest uses a dynamic version from `crates/changenote/Cargo.toml`, so Python wheel metadata and the included Rust CLI version match. The release package keeps `path: "."` and uses `version_file: "crates/changenote/Cargo.toml"`; this preserves root changelog output and note coverage for Rust, Python, and build files. The crates.io and PyPI jobs validate the configured Cargo manifest against the saved release batch and check the local package version in root `Cargo.lock`. Preparation also supports historical root `Cargo.toml` releases. Older releases configured with root `VERSION` receive build-only root Cargo version synchronization in a disposable checkout. The wheel check uses the validated version, not a separate version file. For manual publication, update the Cargo version and lockfile first.
 
-CI currently runs on Ubuntu only. It runs Rust format checks, lint checks, and tests, plus Python wrapper tests, binary wheel builds, and uvx checks with Python 3.14.
+CI currently runs on Ubuntu only. It runs Rust format checks, lint checks, and tests, plus Python wrapper tests, standalone source archive builds and installations, binary wheel builds, and uvx checks with Python 3.14.
+
+## Workspace migration verification
+
+The single-member workspace migration was checked on Linux x86_64 on 2026-11-14.
+
+- All 187 Rust tests passed, with format, Clippy, release-build, and verified Cargo package checks.
+- Workflow tests (29), publication tests (10), release-preparation tests (6), Python wrapper tests (11), and standalone installation tests (3) passed. actionlint, offline zizmor, and changed-file commit hooks passed.
+- The optional `prek run --all-files` check found pre-existing whitespace and final-newline issues in root `CHANGELOG.md`. Its original bytes were restored. This migration does not change that release file.
+- A `.crate` was extracted and installed outside the checkout. A temporary Git repository verified `cargo install --git` discovery of the nested member. A Python sdist built a wheel in a separate temporary directory; the installed executable and Python runner passed version, skill, help, completion, and wrapper checks.
+- CLI version, help, skill bytes, and all three completion scripts matched the pre-migration outputs. Existing Cargo targets, library exports, package/dependency versions, root lockfile, saved batch, and changelog were preserved. The pending patch note is the only new release request.
+- Current nested Cargo, historical root Cargo, and historical root VERSION preparation passed. Failure cases cover invalid source paths, versions, batch/package mismatches, and invalid lockfile identity without writes.
+
+These checks do not establish native macOS, Windows, Linux aarch64, or manylinux 2.17 compatibility, hosted authentication, or successful registry publication.
+
+1. Before release of the workspace migration, the repository maintainer must arrange separately authorized native wheel build/install checks after the local checks pass.
+   - Check the remaining supported platforms and manylinux targets with build-only jobs or native machines. Expect the same package version and embedded skill.
+   - Keep release approval blocked until the required platform evidence exists. Do not dispatch the Release workflow only to test this migration.
+2. After implementation review and the required local and platform checks, the release maintainer must obtain separate publication authorization.
+   - Keep package names, tag format, Action pins, permissions, and Trusted Publisher settings unchanged.
+   - Local checks do not authorize uploads, tags, or a Release workflow dispatch.
 
 ## Repository release workflow
 

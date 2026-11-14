@@ -32,6 +32,19 @@ class Metadata(unittest.TestCase):
                         if uses.startswith("dtolnay/rust-toolchain@"):
                             self.assertEqual(step["with"]["toolchain"], "stable")
 
+    def test_precommit_preserves_only_exact_changelog_fixture_endings(self):
+        hooks = read_yaml(ROOT / ".pre-commit-config.yaml")["repos"][0]["hooks"]
+        hook = next(hook for hook in hooks if hook["id"] == "end-of-file-fixer")
+        pattern = re.compile(hook["exclude"])
+        fixtures = list((ROOT / "crates/changenote/tests/fixtures/planning").glob("*/expected-*-CHANGELOG.md"))
+        self.assertTrue(fixtures)
+        for path in fixtures:
+            self.assertIsNotNone(pattern.search(path.relative_to(ROOT).as_posix()))
+            self.assertTrue(path.read_bytes().endswith(b"\n\n"))
+        for path in ("CHANGELOG.md", "README.md", "crates/changenote/src/main.rs",
+                     "crates/changenote/tests/fixtures/planning/provenance/expected-status.json"):
+            self.assertIsNone(pattern.search(path))
+
     def test_dependabot_cooldowns(self):
         updates = read_yaml(ROOT / ".github/dependabot.yml")["updates"]
         self.assertEqual(
@@ -98,6 +111,7 @@ class Metadata(unittest.TestCase):
         for gate in (
             "uv sync --locked",
             "uv run --locked python -m unittest discover -s python/tests",
+            "uv run --no-project python -m unittest discover -s tests/distribution -v",
             "uv build --out-dir dist/python-binary",
             "uvx --isolated --no-index --find-links dist/python-binary changenote --help",
         ):

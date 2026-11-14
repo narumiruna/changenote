@@ -45,6 +45,7 @@ jobs:
           python-version: "3.14"
       - run: uv sync --locked
       - run: uv run --locked python -m unittest discover -s python/tests
+      - run: uv run --no-project python -m unittest discover -s tests/distribution -v
       - run: uv build --out-dir dist/python-binary
       - run: uvx --isolated --no-index --find-links dist/python-binary changenote --help
 

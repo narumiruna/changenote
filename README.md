@@ -229,7 +229,7 @@ Primary and additional version files must contain explicit stable SemVer version
 
 ## Development
 
-This repository contains one Rust Cargo package and a Python distribution of its executable; neither uses a workspace.
+This repository uses a Cargo workspace with one Rust package at `crates/changenote/` and a Python distribution of its executable. Python does not use a uv workspace.
 See the [development guide](docs/development.md) for the layout, test commands, and maintainer release procedures.
 
 The project uses the [MIT license](LICENSE).

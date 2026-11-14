@@ -13,7 +13,7 @@ build-backend = "maturin"
 
 [tool.maturin]
 bindings = "bin"
-manifest-path = "Cargo.toml"
+manifest-path = "crates/changenote/Cargo.toml"
 python-source = "python"
 module-name = "changenote"
 strip = true
@@ -24,6 +24,8 @@ cache-keys = [
     { file = "python/changenote/**/*.py" },
     { file = "Cargo.toml" },
     { file = "Cargo.lock" },
-    { file = "src/**/*.rs" },
+    { file = "crates/changenote/Cargo.toml" },
+    { file = "crates/changenote/src/**/*.rs" },
+    { file = "crates/changenote/assets/changenote.SKILL.md" },
     { file = "skills/changenote/SKILL.md" },
 ]
