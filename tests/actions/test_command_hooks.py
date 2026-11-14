@@ -53,7 +53,7 @@ class CommandHooks(unittest.TestCase):
         self.f.env.update(
             GITHUB_EVENT_PATH=str(self.event), GITHUB_EVENT_NAME=event,
             GITHUB_REF="refs/heads/" + (self.f.env.get("INPUT_BASE_BRANCH") or self.f.state().get("default_branch", "main")), GITHUB_SHA=sha,
-            INPUT_PUBLISH_COMMAND=publish, INPUT_RELEASE_COMMAND=release,
+            INPUT_PUBLISH_SCRIPT=publish, INPUT_RELEASE_SCRIPT=release,
         )
         result, out = self.f.action("lifecycle", ok=ok)
         self.assertEqual(list(Path(self.f.env["TMPDIR"]).iterdir()), [])
@@ -125,7 +125,8 @@ class CommandHooks(unittest.TestCase):
     def test_management_token_is_not_implicitly_available_to_commands(self):
         self.merged()
         self.f.env.pop("GH_TOKEN", None)
-        self.run_hooks('test -z "${GH_TOKEN+x}"; test -z "${INPUT_GITHUB_TOKEN+x}"')
+        self.run_hooks('test -z "${GH_TOKEN+x}"; test -z "${INPUT_GITHUB_TOKEN+x}"; '
+                       'test -z "${INPUT_PUBLISH_SCRIPT+x}"; test -z "${INPUT_RELEASE_SCRIPT+x}"')
 
     def test_failure_stops_order_without_rollback_or_automatic_retry(self):
         self.merged()

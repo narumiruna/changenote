@@ -544,10 +544,10 @@ The Release PR and publication Actions require Linux, Bash, Git, `gh`, `jq`, a c
 
 ### Post-merge project commands
 
-The root Action accepts optional `publish-command` and `release-command` Bash scripts.
-After a managed version PR is merged, it verifies the exact release tree, runs `publish-command`, then runs `release-command` only after success.
-For example, a prepared package can use `publish-command: uv publish` or `publish-command: cargo publish --locked`; a project script can build, test, and upload.
-`release-command: bash scripts/release.sh` can then push tags or publish a GitHub Release.
+The root Action accepts optional `publish-script` and `release-script` Bash scripts.
+After a managed version PR is merged, it verifies the exact release tree, runs `publish-script`, then runs `release-script` only after success.
+For example, a prepared package can use `publish-script: uv publish` or `publish-script: cargo publish --locked`; a project script can build, test, and upload.
+`release-script: bash scripts/release.sh` can then push tags or publish a GitHub Release.
 With neither input, the root Action performs no package, tag, or GitHub publication.
 
 The root Action requires a compatible installed CLI and the tools/caches needed to replay configured lockfiles.
@@ -743,7 +743,7 @@ After the first crates.io publication, users can install the CLI with `cargo ins
 | Release PR, Publication, Preview | `base-branch` | Repository default branch |
 | Release PR | `commit-message` | `chore(release): version packages` |
 | Release PR | `pr-title` | `chore(release): version packages` |
-| Root | `publish-command`, `release-command` | Empty; no custom publication |
+| Root | `publish-script`, `release-script` | Empty; no custom publication |
 | Publication | `expected-release-commit` | Empty; retain latest-batch selection |
 
 The root Action outputs `has-notes` (`true` or `false`), `pr-number` (number or empty string), and `pr-operation` (`created`, `updated`, `closed`, or `none`). `updated` includes a no-op version rerun that refreshes the PR metadata.
