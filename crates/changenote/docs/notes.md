@@ -22,7 +22,7 @@ Follow the repository's release policy and check the change's effect on users an
 
 Do not use empty notes as no-release markers or invent a package bump or summary.
 Empty files, whitespace-only files, delimiter-only notes, and notes without package assignments or a nonempty summary are invalid.
-For changes that need a check exemption, see [Check PR notes](checks.md).
+For changes that need a check exemption, see [Check PR notes](https://github.com/changenote/changenote/blob/main/docs/checks.md).
 An exemption removes the missing-note requirement, not validation of pending notes.
 
 ## Note format
@@ -362,4 +362,4 @@ The root Action's custom `publish-script` and `release-script` do not require ch
 Disabling output does not preserve consumed summaries elsewhere.
 Upgrade CLI and all Action pins together before using these controls.
 
-For version calculation, saved batches, and changelog insertion, see [Release behavior](releases.md).
+For version calculation, saved batches, and changelog insertion, see [Release behavior](https://github.com/changenote/changenote/blob/main/docs/releases.md).

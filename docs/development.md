@@ -60,7 +60,7 @@ cp README.md LICENSE schema.json crates/changenote/
 cp docs/notes.md docs/swift.md crates/changenote/docs/
 ```
 
-Include the updated copies in the same commit. Publication tests compare their bytes and reject missing or stale copies. The crate includes these resources and the hidden `.changenote` planning fixtures, so extracted Cargo and Python source archives need no repository resource paths or runtime downloads. CI packages the crate and runs its Rust tests from an extracted archive outside the checkout.
+Include the updated copies in the same commit. Publication tests compare their bytes and reject missing or stale copies. Documentation links use absolute repository URLs when the target guide is not shipped in the crate. The crate includes these resources and the hidden `.changenote` planning fixtures, so extracted Cargo and Python source archives need no repository resource paths or runtime downloads. CI packages the crate and runs its Rust tests from an extracted archive outside the checkout.
 The exact changelog fixtures keep their final blank-line separator; `.gitattributes` and the newline hook preserve these bytes.
 
 ## Workflow and publication checks
