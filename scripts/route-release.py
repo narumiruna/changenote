@@ -1,4 +1,4 @@
-"""Read-only managed-merge routing shared by Actions and the Release workflow."""
+"""Read-only managed-merge routing for the CLI Release workflow."""
 
 import json
 import os
@@ -119,15 +119,9 @@ def main():
         raise ValueError("Invalid repository")
     event_name = os.environ["GITHUB_EVENT_NAME"]
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
-    base = "main"
-    if sys.argv[1:] == ["managed-merge"]:
-        base = os.environ["INPUT_BASE_BRANCH"]
-        # The root Action never authorizes commands through manual inputs.
-        if event_name == "workflow_dispatch":
-            event = {"inputs": {"operation": "manage-pr"}}
-    elif sys.argv[1:]:
+    if sys.argv[1:]:
         raise ValueError("Unknown routing operation")
-    result = route(event_name, event, repository, os.environ["GITHUB_REF"], base)
+    result = route(event_name, event, repository, os.environ["GITHUB_REF"])
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         for key, value in result.items():
             output.write(f"{key}={value}\n")

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/narumiruna/changenote/main/schema.json",
+  "$id": "https://raw.githubusercontent.com/changenote/changenote/main/schema.json",
   "title": "changenote configuration",
   "description": "Packages managed by changenote. Paths and version files are also checked by the CLI.",
   "type": "object",

@@ -36,7 +36,7 @@ Create `.changenote/config.json` with explicit packages:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/narumiruna/changenote/main/schema.json",
+  "$schema": "https://raw.githubusercontent.com/changenote/changenote/main/schema.json",
   "packages": {
     "pkg-a": { "path": "packages/pkg-a", "version_file": "VERSION" },
     "pkg-b": { "path": "packages/pkg-b", "version_file": "VERSION" }

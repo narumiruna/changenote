@@ -37,7 +37,7 @@ jobs:
         id: route
         env:
           GH_TOKEN: ${{ github.token }}
-        run: uv run --no-project python scripts/action/route-release.py
+        run: uv run --no-project python scripts/route-release.py
 
   release:
     needs: route
@@ -63,7 +63,8 @@ jobs:
           cargo test --locked
           cargo build --locked --release
           echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
-      - uses: $/
+      # Merge https://github.com/changenote/action/pull/1 before this workflow migration.
+      - uses: changenote/action@4b2d07126b8a4da4b44aa5fb8256dd81a69e2e3a
         with:
           base-branch: main
 
@@ -93,7 +94,7 @@ jobs:
           cargo build --locked --release
           echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-      - uses: $/preview
+      - uses: changenote/action/preview@4b2d07126b8a4da4b44aa5fb8256dd81a69e2e3a
         id: preview
         with:
           base-branch: main
@@ -102,15 +103,16 @@ jobs:
           EXPECTED_RELEASE_COMMIT: ${{ needs.route.outputs.release-commit }}
           PREVIEW_RELEASE_COMMIT: ${{ steps.preview.outputs.release-commit }}
           PREVIEW_READY: ${{ steps.preview.outputs.ready }}
-        run: uv run --no-project python scripts/action/route-release.py check-preview
+        run: uv run --no-project python scripts/route-release.py check-preview
       # Recheck the preview selection after publication fetches main, before writes.
+      # An empty expected commit disables the public guard, so skip an empty batch.
       - name: Publish selected batch
         id: publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-          INPUT_BASE_BRANCH: main
-          EXPECTED_RELEASE_COMMIT: ${{ steps.preview.outputs.release-commit }}
-        run: bash scripts/action/publish.sh "$EXPECTED_RELEASE_COMMIT"
+        if: steps.preview.outputs.release-commit != ''
+        uses: changenote/action/publish@4b2d07126b8a4da4b44aa5fb8256dd81a69e2e3a
+        with:
+          base-branch: main
+          expected-release-commit: ${{ steps.preview.outputs.release-commit }}
 
   crates-io:
     needs: publish
@@ -155,7 +157,7 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
           RELEASE_VERSION: ${{ steps.prepare.outputs.version }}
-        run: uv run --no-project python ../workflow/scripts/action/publish-crate.py . "$RELEASE_VERSION"
+        run: uv run --no-project python ../workflow/scripts/publish-crate.py . "$RELEASE_VERSION"
 
   wheels:
     needs: publish

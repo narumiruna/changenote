@@ -1,15 +1,16 @@
-"""Check Action/workflow YAML and execute composite run commands in a consumer fixture."""
+"""Check CLI workflow permissions, release selection, and distribution gates."""
 
 import re
-import sys
 import unittest
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tests/actions"))
-import test_actions  # noqa: E402
+ACTION_REVISION = "4b2d07126b8a4da4b44aa5fb8256dd81a69e2e3a"
+ACTION_ROOT = "changenote/action@" + ACTION_REVISION
+ACTION_PREVIEW = "changenote/action/preview@" + ACTION_REVISION
+ACTION_PUBLISH = "changenote/action/publish@" + ACTION_REVISION
 
 
 def read_yaml(path):
@@ -22,7 +23,7 @@ class Metadata(unittest.TestCase):
             for job in read_yaml(path)["jobs"].values():
                 for step in job.get("steps", []):
                     uses = step.get("uses")
-                    if not uses or uses.startswith("$/"):
+                    if not uses:
                         continue
                     with self.subTest(workflow=path.name, action=uses):
                         self.assertRegex(uses, r"^[^@]+@[0-9a-f]{40}$")
@@ -41,121 +42,66 @@ class Metadata(unittest.TestCase):
             with self.subTest(ecosystem=update["package-ecosystem"]):
                 self.assertGreaterEqual(int(update["cooldown"]["default-days"]), 7)
 
-    def test_self_repository_paths_and_inputs(self):
+    def test_public_actions_and_local_cli_builds(self):
         jobs = read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]
+        self.assertNotIn("preview", jobs)  # Preview must run before writes in the publication job.
         references = []
         for name in ("release", "publish"):
-            self.assertEqual(jobs[name]["steps"][0]["with"]["ref"], "${{ github.sha }}")
-            for step in jobs[name]["steps"]:
+            steps = jobs[name]["steps"]
+            self.assertEqual(steps[0]["with"]["ref"], "${{ github.sha }}")
+            build = next(step for step in steps if step.get("name") == "Test and build")
+            self.assertIn("cargo test --locked", build["run"])
+            self.assertIn("cargo build --locked --release", build["run"])
+            self.assertIn('echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"', build["run"])
+            for step in steps:
                 uses = step.get("uses", "")
-                if not uses.startswith("$/"):
+                if uses not in {ACTION_ROOT, ACTION_PREVIEW, ACTION_PUBLISH}:
                     continue
                 references.append(uses)
-                metadata = read_yaml(ROOT / uses.removeprefix("$/") / "action.yml")
-                supplied = set(step.get("with", {}))
-                inputs = metadata["inputs"]
-                self.assertTrue(supplied.issubset(inputs))
-                required = {
-                    key for key, value in inputs.items()
-                    if value.get("required") == "true" and "default" not in value
-                }
-                self.assertTrue(required.issubset(supplied))
-        self.assertEqual(references, ["$/", "$/preview"])
+                self.assertLess(steps.index(build), steps.index(step))
+                self.assertEqual(step["with"]["base-branch"], "main")
+                expected_inputs = {"base-branch"}
+                if uses == ACTION_PUBLISH:
+                    expected_inputs.add("expected-release-commit")
+                self.assertEqual(set(step["with"]), expected_inputs)
+        self.assertEqual(references, [ACTION_ROOT, ACTION_PREVIEW, ACTION_PUBLISH])
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        self.assertNotIn("scripts/action/", workflow)
+        self.assertNotIn("uses: $/", workflow)
+        self.assertNotIn("changenote/action/release@", workflow)
+        route = next(step for step in jobs["route"]["steps"] if step.get("id") == "route")
+        self.assertEqual(route["run"], "uv run --no-project python scripts/route-release.py")
 
-    def test_actionlint_filter_only_matches_known_self_repository_errors(self):
+    def test_ci_keeps_cli_gates_without_action_tests_or_lint_filters(self):
         jobs = read_yaml(ROOT / ".github/workflows/ci.yml")["jobs"]
-        script = next(
-            step["run"] for step in jobs["actions"]["steps"]
-            if step.get("name") == "Check shell scripts and workflows"
-        )
-        pattern = re.search(r"-ignore '([^']+)'", script).group(1)
-
-        def diagnostic(action, reason="ref is missing"):
-            return (
-                f'specifying action "{action}" in invalid format because {reason}. '
-                'available formats are "{owner}/{repo}@{ref}" or '
-                '"{owner}/{repo}/{path}@{ref}"'
-            )
-
-        for action in ("$/", "$/preview"):
-            self.assertRegex(diagnostic(action), pattern)
-            self.assertNotRegex(diagnostic(action, "owner is missing"), pattern)
-            self.assertNotRegex(diagnostic(action) + " extra error", pattern)
-        for action in ("$/publish", "./preview", "actions/checkout"):
-            self.assertNotRegex(diagnostic(action), pattern)
-
-    def test_inputs_outputs_and_composite_paths(self):
-        fixture = test_actions.Actions("test_no_batch")
-        fixture.setUp()
-        self.addCleanup(fixture.doCleanups)
-        for action, step, expected in (
-            (
-                ROOT / "action.yml",
-                "version",
-                {"has-notes", "pr-number", "pr-operation", "release-commit", "releases"},
-            ),
-            (
-                ROOT / "publish/action.yml",
-                "publish",
-                {"release-commit", "releases", "published", "published-packages"},
-            ),
-            (
-                ROOT / "preview/action.yml",
-                "preview",
-                {"release-commit", "releases", "ready", "publication-plan"},
-            ),
+        self.assertEqual(set(jobs), {"workflows", "python", "check"})
+        runs = "\n".join(step.get("run", "") for step in jobs["workflows"]["steps"])
+        for suite in ("workflows", "publication", "python_release"):
+            self.assertIn(f"python -m unittest discover -s tests/{suite} -v", runs)
+        self.assertIn("--with pyyaml", runs)
+        lint = next(step for step in jobs["workflows"]["steps"] if step.get("name") == "Check workflows")
+        self.assertIn("actionlint@v1.7.11", lint["run"])
+        self.assertIn('"$(go env GOPATH)/bin/actionlint"', lint["run"])
+        self.assertNotIn("-ignore", lint["run"])
+        ci = (ROOT / ".github/workflows/ci.yml").read_text()
+        for removed in ("tests/actions", "tests/action_metadata", "scripts/action/", "shellcheck"):
+            self.assertNotIn(removed, ci)
+        rust = [step.get("run") for step in jobs["check"]["steps"]]
+        for gate in (
+            "cargo fmt --check",
+            "cargo clippy --locked --all-targets -- -D warnings",
+            "cargo test --locked",
+            "cargo run --locked -p changenote -- status",
         ):
-            metadata = read_yaml(action)
-            self.assertEqual(metadata["runs"]["using"], "composite")
-            self.assertEqual(set(metadata["outputs"]), expected)
-            self.assertEqual(
-                metadata["inputs"]["github-token"]["default"], "${{ github.token }}"
-            )
-            self.assertEqual(metadata["inputs"]["base-branch"]["default"], "")
-            if step == "publish":
-                self.assertEqual(metadata["inputs"]["expected-release-commit"]["default"], "")
-                self.assertEqual(
-                    metadata["runs"]["steps"][0]["env"]["INPUT_EXPECTED_RELEASE_COMMIT"],
-                    "${{ inputs.expected-release-commit }}",
-                )
-                self.assertNotIn("${{", metadata["runs"]["steps"][0]["run"])
-                fixture.env["INPUT_EXPECTED_RELEASE_COMMIT"] = ""
-            run = next(item for item in metadata["runs"]["steps"] if item.get("id") == step)
-            self.assertEqual(run["id"], step)
-            self.assertEqual(run["shell"], "bash")
-            self.assertEqual(run["env"]["ACTION_PATH"], "${{ github.action_path }}")
-            token_key = "INPUT_GITHUB_TOKEN" if step == "version" else "GH_TOKEN"
-            self.assertEqual(run["env"][token_key], "${{ inputs.github-token }}")
-            if step == "version":
-                fixture.env["INPUT_GITHUB_TOKEN"] = "test-token"
-                event = fixture.top / "root-event.json"
-                event.write_text("{}")
-                fixture.env.update(GITHUB_EVENT_NAME="workflow_dispatch",
-                                   GITHUB_REF="refs/heads/main", GITHUB_EVENT_PATH=str(event))
-            for key, value in metadata["outputs"].items():
-                self.assertEqual(
-                    value["value"], "${{ steps." + step + ".outputs." + key + " }}"
-                )
-            fixture.env["ACTION_PATH"] = str(action.parent)
-            output = fixture.top / "metadata-output"
-            output.write_text("")
-            fixture.env["GITHUB_OUTPUT"] = str(output)
-            fixture.run_cmd(["bash", "-c", run["run"]])
-            actual = dict(
-                line.split("=", 1) for line in output.read_text().splitlines()
-            )
-            self.assertEqual(set(actual), expected)
-            if step in ("preview", "publish"):
-                self.assertEqual(actual["releases"], "[]")
-            if step == "preview":
-                self.assertEqual(actual["ready"], "true")
-                self.assertEqual(actual["release-commit"], "")
-                self.assertEqual(actual["publication-plan"], "[]")
-                self.assertEqual(
-                    metadata["inputs"]["github-token"]["description"],
-                    "Token with contents read permission.",
-                )
-            self.assertFalse((fixture.repo / "scripts/action").exists())
+            self.assertIn(gate, rust)
+        distribution = [step.get("run") for step in jobs["python"]["steps"]]
+        for gate in (
+            "uv sync --locked",
+            "uv run --locked python -m unittest discover -s python/tests",
+            "uv build --out-dir dist/python-binary",
+            "uvx --isolated --no-index --find-links dist/python-binary changenote --help",
+        ):
+            self.assertIn(gate, distribution)
 
     def test_triggers_concurrency_and_permissions(self):
         workflow = read_yaml(ROOT / ".github/workflows/release.yml")
@@ -175,10 +121,8 @@ class Metadata(unittest.TestCase):
             workflow["jobs"]["release"]["permissions"],
             {"contents": "write", "pull-requests": "write"},
         )
-        self.assertEqual(
-            workflow["jobs"]["publish"]["permissions"], {"contents": "write"}
-        )
-        # A replaced PR-management job must not cancel its independent publication.
+        self.assertEqual(workflow["jobs"]["publish"]["permissions"], {"contents": "write"})
+        # PR-management failure must not cancel independent publication.
         self.assertEqual(workflow["jobs"]["publish"]["needs"], "route")
         self.assertIn("!cancelled()", workflow["jobs"]["publish"]["if"])
         self.assertEqual(workflow["jobs"]["route"]["permissions"], {"contents": "read", "pull-requests": "read"})
@@ -196,15 +140,29 @@ class Metadata(unittest.TestCase):
         for name in ("release", "publish", "crates-io", "wheels"):
             job = workflow["jobs"][name]
             self.assertEqual(job["steps"][0]["with"]["persist-credentials"], "false")
-        self.assertEqual(workflow["jobs"]["release"]["steps"][-1]["uses"], "$/")
-        publish_steps = workflow["jobs"]["publish"]["steps"]
-        self.assertEqual(publish_steps[-1]["run"], 'bash scripts/action/publish.sh "$EXPECTED_RELEASE_COMMIT"')
-        self.assertEqual(publish_steps[-1]["env"]["EXPECTED_RELEASE_COMMIT"], "${{ steps.preview.outputs.release-commit }}")
-        self.assertEqual(publish_steps[-3]["uses"], "$/preview")
-        self.assertEqual(publish_steps[-2]["env"]["EXPECTED_RELEASE_COMMIT"], "${{ needs.route.outputs.release-commit }}")
-        self.assertIn("check-preview", publish_steps[-2]["run"])
-        ci = read_yaml(ROOT / ".github/workflows/ci.yml")
-        self.assertTrue({"actions", "python", "check"}.issubset(ci["jobs"]))
+        self.assertEqual(workflow["jobs"]["release"]["steps"][-1]["uses"], ACTION_ROOT)
+
+    def test_publication_checks_route_then_preview_before_writes(self):
+        steps = read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]["publish"]["steps"]
+        preview, check, publish = steps[-3:]
+        self.assertEqual(preview["uses"], ACTION_PREVIEW)
+        self.assertEqual(preview["id"], "preview")
+        self.assertEqual(check["env"], {
+            "EXPECTED_RELEASE_COMMIT": "${{ needs.route.outputs.release-commit }}",
+            "PREVIEW_RELEASE_COMMIT": "${{ steps.preview.outputs.release-commit }}",
+            "PREVIEW_READY": "${{ steps.preview.outputs.ready }}",
+        })
+        self.assertEqual(check["run"], "uv run --no-project python scripts/route-release.py check-preview")
+        self.assertNotIn("continue-on-error", check)
+        self.assertNotIn("if", check)
+        self.assertEqual(publish["uses"], ACTION_PUBLISH)
+        self.assertEqual(publish["id"], "publish")
+        self.assertEqual(publish["with"]["expected-release-commit"], "${{ steps.preview.outputs.release-commit }}")
+        # Empty expected commits disable the public guard. Do not call it for no batch.
+        self.assertEqual(publish["if"], "steps.preview.outputs.release-commit != ''")
+        for commit, selected in (("", False), ("a" * 40, True)):
+            condition = publish["if"].replace("steps.preview.outputs.release-commit", repr(commit))
+            self.assertEqual(eval(condition, {"__builtins__": {}}), selected)
 
     def test_pypi_builds_validated_commit_and_retries(self):
         jobs = read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]
@@ -221,6 +179,9 @@ class Metadata(unittest.TestCase):
             wheels["steps"][0]["with"]["ref"],
             "${{ needs.publish.outputs.release-commit }}",
         )
+        self.assertEqual(wheels["steps"][0]["with"]["path"], "source")
+        self.assertEqual(wheels["steps"][1]["with"]["path"], "workflow")
+        self.assertNotIn("ref", wheels["steps"][1]["with"])
         targets = {entry["target"] for entry in wheels["strategy"]["matrix"]["include"]}
         self.assertEqual(
             targets,
@@ -232,42 +193,24 @@ class Metadata(unittest.TestCase):
                 "x86_64-pc-windows-msvc",
             },
         )
-        build = next(
-            step for step in wheels["steps"] if step.get("name") == "Build wheel"
-        )
+        build = next(step for step in wheels["steps"] if step.get("name") == "Build wheel")
         self.assertTrue(build["uses"].startswith("PyO3/maturin-action@"))
         self.assertEqual(build["with"]["manylinux"], "2_17")
         self.assertIn("--locked", build["with"]["args"])
         self.assertIn("--compatibility pypi", build["with"]["args"])
-        sdist = next(
-            step
-            for step in wheels["steps"]
-            if step.get("name") == "Build source archive"
-        )
+        sdist = next(step for step in wheels["steps"] if step.get("name") == "Build source archive")
         self.assertEqual(sdist["if"], "matrix.target == 'x86_64-unknown-linux-gnu'")
         self.assertEqual(sdist["with"]["command"], "sdist")
-        prepare_dist = next(
-            step
-            for step in wheels["steps"]
-            if step.get("name") == "Create distribution directory"
-        )
+        prepare_dist = next(step for step in wheels["steps"] if step.get("name") == "Create distribution directory")
         self.assertEqual(prepare_dist["shell"], "bash")
         self.assertEqual(prepare_dist["run"], "mkdir -p source/dist")
-        self.assertLess(
-            wheels["steps"].index(prepare_dist), wheels["steps"].index(build)
-        )
-        self.assertLess(
-            wheels["steps"].index(prepare_dist), wheels["steps"].index(sdist)
-        )
-        prepare = next(
-            step for step in wheels["steps"] if step.get("name") == "Set release build version"
-        )
+        self.assertLess(wheels["steps"].index(prepare_dist), wheels["steps"].index(build))
+        self.assertLess(wheels["steps"].index(prepare_dist), wheels["steps"].index(sdist))
+        prepare = next(step for step in wheels["steps"] if step.get("name") == "Set release build version")
         self.assertEqual(prepare["id"], "prepare")
-        self.assertIn("prepare-python-release.py source", prepare["run"])
+        self.assertIn("workflow/scripts/prepare-python-release.py source", prepare["run"])
         self.assertIn('echo "version=$version" >> "$GITHUB_OUTPUT"', prepare["run"])
-        check = next(
-            step for step in wheels["steps"] if step.get("name") == "Check installed wheel version"
-        )
+        check = next(step for step in wheels["steps"] if step.get("name") == "Check installed wheel version")
         self.assertEqual(check["env"]["EXPECTED_VERSION"], "${{ steps.prepare.outputs.version }}")
         self.assertIn('test "$actual" = "changenote $EXPECTED_VERSION"', check["run"])
         self.assertNotIn("< VERSION", check["run"])
@@ -324,7 +267,7 @@ class Metadata(unittest.TestCase):
         })
         self.assertEqual(
             upload["run"],
-            'uv run --no-project python ../workflow/scripts/action/publish-crate.py . "$RELEASE_VERSION"',
+            'uv run --no-project python ../workflow/scripts/publish-crate.py . "$RELEASE_VERSION"',
         )
 
     def test_job_conditions_execute_routing_and_failure_cases(self):
@@ -366,65 +309,10 @@ class Metadata(unittest.TestCase):
         self.assertFalse(enabled("wheels", dict(values, **{"needs.publish.outputs.release-commit": ""})))
         # A PyPI build failure must not prevent independent crates.io recovery.
         self.assertTrue(enabled("crates-io", dict(values, **{"needs.wheels.result": "failure"})))
-        # Publish has no release-result predicate: PR failure must not block recovery.
         self.assertNotIn("needs.release.result", jobs["publish"]["if"])
-
-    def test_documented_examples_and_contracts(self):
-        guide = "\n".join(
-            (ROOT / path).read_text()
-            for path in ("docs/checks.md", "docs/github-actions-reference.md")
-        )
-        blocks = re.findall(r"```yaml\n(.*?)```", guide, re.DOTALL)
-        examples = [yaml.load(block, Loader=yaml.BaseLoader) for block in blocks]
-        workflow = next(example for example in examples if "jobs" in example)
-        check = next(example for example in examples if "steps" in example)
-        self.assertEqual(check["permissions"], {"contents": "read"})
-        self.assertEqual(check["steps"][0]["with"]["fetch-depth"], "0")
-        self.assertEqual(check["steps"][0]["with"]["persist-credentials"], "false")
-        self.assertEqual(
-            check["steps"][-1]["env"]["BASE_BRANCH"], "${{ github.base_ref }}"
-        )
-        self.assertEqual(
-            check["steps"][-1]["run"],
-            'changenote check --since "refs/remotes/origin/$BASE_BRANCH"',
-        )
-        self.assertEqual(workflow["permissions"], {"contents": "read"})
-        self.assertEqual(
-            workflow["jobs"]["release"]["permissions"],
-            {"contents": "write", "pull-requests": "write"},
-        )
-        self.assertEqual(
-            workflow["jobs"]["publish"]["permissions"], {"contents": "write"}
-        )
-        self.assertEqual(
-            workflow["jobs"]["release"]["steps"][-1]["uses"],
-            "narumiruna/changenote@<full-action-commit-sha>",
-        )
-        self.assertEqual(
-            workflow["jobs"]["publish"]["steps"][-1]["uses"],
-            "narumiruna/changenote/publish@<full-action-commit-sha>",
-        )
-        preview = next(
-            example
-            for example in examples
-            if example.get("name") == "Publication preview"
-        )
-        self.assertEqual(preview["permissions"], {"contents": "read"})
-        self.assertEqual(
-            preview["jobs"]["preview"]["steps"][-1]["uses"],
-            "narumiruna/changenote/preview@<full-action-commit-sha>",
-        )
-        self.assertNotIn(
-            "preview", read_yaml(ROOT / ".github/workflows/release.yml")["jobs"]
-        )  # Preview is a pre-write step, not a separate production job.
-        for path in (
-            ROOT / "action.yml",
-            ROOT / "publish/action.yml",
-            ROOT / "preview/action.yml",
-        ):
-            action = read_yaml(path)
-            for key in (*action["inputs"], *action["outputs"]):
-                self.assertIn("`" + key + "`", guide)
+        off_main = dict(values, **{"github.ref": "refs/heads/other"})
+        self.assertFalse(enabled("release", off_main))
+        self.assertFalse(enabled("publish", off_main))
 
 
 if __name__ == "__main__":

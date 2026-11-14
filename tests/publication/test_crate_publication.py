@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts/action/publish-crate.py"
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts/publish-crate.py"
 spec = importlib.util.spec_from_file_location("crate_publication", SCRIPT)
 publication = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(publication)

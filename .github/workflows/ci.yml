@@ -11,33 +11,24 @@ permissions:
   contents: read
 
 jobs:
-  actions:
+  workflows:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
-        with:
-          toolchain: stable
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.14"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.25'
-      - name: Check shell scripts and workflows
+      - name: Check workflows
         run: |
-          for script in scripts/action/*.sh; do bash -n "$script"; done
-          shellcheck -x scripts/action/*.sh
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
-          # actionlint does not support self-repository refs yet.
-          # Remove this exact-message filter after https://github.com/rhysd/actionlint/issues/711.
-          "$(go env GOPATH)/bin/actionlint" \
-            -ignore '^specifying action "\$/(preview)?" in invalid format because ref is missing\. available formats are "\{owner\}/\{repo\}@\{ref\}" or "\{owner\}/\{repo\}/\{path\}@\{ref\}"$'
-      - run: cargo build --locked
-      - run: uv run --no-project python -m unittest discover -s tests/actions -v
-      - run: uv run --no-project --with pyyaml python -m unittest discover -s tests/action_metadata -v
+          "$(go env GOPATH)/bin/actionlint"
+      - run: uv run --no-project --with pyyaml python -m unittest discover -s tests/workflows -v
+      - run: uv run --no-project python -m unittest discover -s tests/publication -v
       - run: uv run --no-project python -m unittest discover -s tests/python_release -v
 
   python:
