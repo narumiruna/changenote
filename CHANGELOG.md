@@ -1,3 +1,9 @@
+## 0.12.1
+
+### Patch Changes
+
+- Fix macOS ARM64 wheel publication by using the supported macos-15 runner.
+
 ## 0.12.0
 
 ### Minor Changes
