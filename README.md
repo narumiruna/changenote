@@ -112,9 +112,41 @@ See [release behavior and recovery](docs/releases.md) before automating releases
 | `version` | Apply the plan and consume notes. |
 | `release-notes` | Print one package's changelog entry for an exact version. |
 | `tag` | Create local annotated tags for the committed release batch. |
+| `completion` | Print a Bash, Zsh, or Fish completion script. |
 
 Use `changenote <command> --help` for command options.
 The CLI's `--version` reports its build version, not a configured package version.
+
+### Shell completion
+
+`changenote completion <bash|zsh|fish>` prints a completion script to stdout.
+It needs no project configuration and does not change files.
+The script completes command names, options, and fixed argument values.
+Fish does not complete positional argument values.
+Generate it again after upgrading changenote.
+
+1. Bash: add this line to `~/.bashrc`, then start a new shell:
+
+   ```bash
+   source <(changenote completion bash)
+   ```
+
+2. Zsh: add these lines to `~/.zshrc`, then start a new shell:
+
+   ```zsh
+   autoload -Uz compinit
+   compinit
+   source <(changenote completion zsh)
+   ```
+
+   If `compinit` is already enabled, add only the `source` line after it.
+
+3. Fish: save the script, then start a new shell:
+
+   ```fish
+   mkdir -p ~/.config/fish/completions
+   changenote completion fish > ~/.config/fish/completions/changenote.fish
+   ```
 
 ## GitHub Actions
 

@@ -10,6 +10,7 @@ readme = "README.md"
 anyhow = "1"
 getrandom = "0.4"
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
