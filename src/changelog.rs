@@ -150,6 +150,29 @@ mod tests {
     }
 
     #[test]
+    fn separate_notes_match_the_documented_changelog_entry() {
+        let release = Release {
+            package: "pkg-a".into(),
+            notes: vec![
+                "Read change note messages from a file.\nUse `--message-file <path>` to supply a Markdown file.".into(),
+                "Fix parsing of quoted package names in change notes.".into(),
+            ],
+            note_bumps: vec![Bump::Minor, Bump::Patch],
+            ..release()
+        };
+        let expected = concat!(
+            "## 1.1.0\n\n",
+            "### Minor Changes\n\n",
+            "- Read change note messages from a file.\n",
+            "  Use `--message-file <path>` to supply a Markdown file.\n\n",
+            "### Patch Changes\n\n",
+            "- Fix parsing of quoted package names in change notes.\n\n",
+        );
+        assert_eq!(render(&release, "", false), expected);
+        assert!(include_str!("../docs/notes.md").contains(expected.trim_end()));
+    }
+
+    #[test]
     fn preserves_prefix_and_prior_versions() {
         let entry = "## 1.1.0\n\n### Minor Changes\n\n- Feature\n\n### Patch Changes\n\n- Fix\n  \n  ```rs\n  run();\n  ```\n\n";
         for (old, prefix, suffix) in [

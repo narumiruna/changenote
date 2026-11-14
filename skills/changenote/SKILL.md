@@ -103,9 +103,13 @@ Use ASD-STE100 principles for English note text; full compliance is not required
 Give priority to technical accuracy and clear meaning.
 Keep required technical names and terms, and use conventional release-note verbs such as `Add`, `Fix`, and `Remove`.
 
-- Use a separate note for each independent change, even when the package and bump are the same.
+- Review each note as one future changelog list item; the renderer supplies version headings, section headings, and the outer list marker.
+  - Do not add headings or an outer list marker just to format the generated entry.
+  - Use nested lists or numbered steps when needed for related details or migration instructions.
+- Use a separate note and the appropriate bump for each independent change, even within one PR or with the same package and bump.
   - Update an existing note only for the same change; do not combine unrelated work from another PR.
-- Start with a short summary of the change and its effect on users, not the implementation history.
+  - Keep tightly related details together; do not split notes by sentence count or paragraph length.
+- Start with a short plain-text summary of the change and its effect on users, not the implementation history.
 - State required user actions and known limits when the change evidence supports them.
   - Verify current compatibility before presenting a past blocker as a current limit.
 - Use active voice and one topic per sentence.
@@ -114,6 +118,7 @@ Keep required technical names and terms, and use conventional release-note verbs
 - Use the same term for the same object throughout the note.
 - Use simple verb forms and specific words; avoid jargon, promotional text, and vague claims.
 - Put each sentence on a separate line.
+  - Consecutive prose lines form one paragraph; they do not become separate changelog list items.
 - Write commands, paths, option names, and API names in backticks.
 - To include a PR reference, add a Markdown link to the note summary, such as `Fix output ([#123](https://github.com/owner/repo/pull/123))`.
   - Use the actual repository URL and verified PR numbers; preserve several links when several PRs explain the change.
@@ -129,6 +134,9 @@ Keep required technical names and terms, and use conventional release-note verbs
   - Select the bump from the repository's compatibility policy; do not assume every breaking change requires `major`.
 - Check the technical facts and English text before completion.
   - `status` checks note structure and the release plan; it does not check ASD-STE100 compliance.
+
+These writing defaults do not restrict supported Markdown.
+Use the [combined changelog example](https://github.com/changenote/changenote/blob/main/docs/notes.md#write-for-the-generated-changelog) to check note boundaries and generated output.
 
 #### Fix Example
 

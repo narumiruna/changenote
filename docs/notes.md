@@ -5,6 +5,7 @@ A note selects affected packages and bumps; optional types control changelog sec
 
 - [Decide whether a note is needed](#decide-whether-a-note-is-needed)
 - [Note format](#note-format)
+  - [Write for the generated changelog](#write-for-the-generated-changelog)
 - [Notes for multiple packages](#notes-for-multiple-packages)
 - [Note sources and automatic names](#note-sources-and-automatic-names)
 - [Automatic commit source links](#automatic-commit-source-links)
@@ -28,10 +29,6 @@ An exemption removes the missing-note requirement, not validation of pending not
 
 A note is a Markdown file in the top level of `.changenote/`.
 The front matter assigns a SemVer bump to each affected package.
-Start the body with a short summary of the change's effect on users.
-Use a separate note for each independent change, even when the package and bump are the same.
-Update an existing note only for the same change.
-Add required migration steps and known limits when supported by the change evidence.
 Keep verified implementation PR links in the body; do not guess unknown PR numbers.
 
 ```markdown
@@ -46,6 +43,78 @@ Quoted keys, such as `"pkg-a": minor`, are also accepted.
 You can write notes directly without the CLI.
 Only top-level `.changenote/*.md` files are read.
 Hidden files and `README.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` are ignored.
+
+### Write for the generated changelog
+
+Write each note as an entry in the combined `CHANGELOG.md`.
+The renderer adds version headings, section headings, and one list item for each note.
+It indents continuation lines inside that item.
+Consecutive prose lines form one paragraph, not separate changelog entries.
+A list inside a note becomes a nested list, not separate entries.
+
+- Start with a short plain-text summary of the change's effect on users.
+  - Use backticks for commands, paths, option names, and API names.
+- Use a separate note for each independent change, even within one PR or with the same package and bump.
+  - Update an existing note only for the same change.
+  - Keep tightly related details together; do not split notes by sentence count or paragraph length.
+- Keep required user actions, migration steps, and known limits with the change they explain.
+  - Include only instructions and limits supported by the change evidence.
+- Do not add release headings or an outer list marker just to format the generated entry.
+  - Use nested lists or numbered steps when needed for related details or migration instructions.
+
+These are writing guidelines, not additional validation rules.
+Markdown headings, lists, and multiple paragraphs remain supported.
+
+Select the appropriate bump for each independent change.
+With default grouping, each note appears under its own bump, even when the package receives a higher bump.
+With configured sections, the note's type selects its section independently of its bump.
+A fix inside a feature note does not become a separate patch entry.
+
+#### Combined changelog example
+
+This example starts with `pkg-a` at `1.0.0` and uses default bump grouping.
+It has no source links or custom note template.
+
+Example `.changenote/message-file.md`:
+
+```markdown
+---
+pkg-a: minor
+---
+
+Read change note messages from a file.
+Use `--message-file <path>` to supply a Markdown file.
+```
+
+Example `.changenote/quoted-package-names.md`:
+
+```markdown
+---
+pkg-a: patch
+---
+
+Fix parsing of quoted package names in change notes.
+```
+
+The combined `CHANGELOG.md` entry is:
+
+```markdown
+## 1.1.0
+
+### Minor Changes
+
+- Read change note messages from a file.
+  Use `--message-file <path>` to supply a Markdown file.
+
+### Patch Changes
+
+- Fix parsing of quoted package names in change notes.
+```
+
+The feature's required user instruction remains inside its item.
+The independent fix receives its own item under `Patch Changes`.
+Optional `Sources:` paragraphs and template metadata also remain inside each note's generated item.
+Do not add them manually; see [source links](#automatic-commit-source-links) and [templates](#changelog-output-controls-and-native-templates).
 
 ## Notes for multiple packages
 
