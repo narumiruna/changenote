@@ -1,5 +1,5 @@
 name: Changenote Release PR
-description: Create or update a Release PR from pending changenote notes (Linux).
+description: Manage version PRs and run optional publish and release commands after a verified managed merge (Linux).
 inputs:
   github-token:
     description: Token with contents and pull requests write permissions.
@@ -13,6 +13,12 @@ inputs:
   pr-title:
     description: Release PR title.
     default: 'chore(release): version packages'
+  publish-command:
+    description: Optional Bash script to publish packages after a verified managed merge. Runs before release-command.
+    default: ''
+  release-command:
+    description: Optional Bash script to create tags, assets, or GitHub Releases after successful publish-command, or directly when it is absent.
+    default: ''
 outputs:
   has-notes:
     description: Whether there are pending notes.
@@ -23,15 +29,27 @@ outputs:
   pr-operation:
     description: created, updated, closed, or none.
     value: ${{ steps.version.outputs.pr-operation }}
+  release-commit:
+    description: Verified managed-merge commit, or empty when no batch is selected.
+    value: ${{ steps.version.outputs.release-commit }}
+  releases:
+    description: JSON array of package, version, and tag for the verified managed batch.
+    value: ${{ steps.version.outputs.releases }}
 runs:
   using: composite
   steps:
+    - name: Set up router runtime
+      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      with:
+        enable-cache: false
     - id: version
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_BASE_BRANCH: ${{ inputs.base-branch }}
         INPUT_COMMIT_MESSAGE: ${{ inputs.commit-message }}
         INPUT_PR_TITLE: ${{ inputs.pr-title }}
+        INPUT_PUBLISH_COMMAND: ${{ inputs.publish-command }}
+        INPUT_RELEASE_COMMAND: ${{ inputs.release-command }}
         ACTION_PATH: ${{ github.action_path }}
-      run: bash "$ACTION_PATH/scripts/action/version.sh"
+      run: bash "$ACTION_PATH/scripts/action/lifecycle.sh"

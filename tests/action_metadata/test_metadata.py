@@ -92,7 +92,7 @@ class Metadata(unittest.TestCase):
             (
                 ROOT / "action.yml",
                 "version",
-                {"has-notes", "pr-number", "pr-operation"},
+                {"has-notes", "pr-number", "pr-operation", "release-commit", "releases"},
             ),
             (
                 ROOT / "publish/action.yml",
@@ -120,11 +120,18 @@ class Metadata(unittest.TestCase):
                 )
                 self.assertNotIn("${{", metadata["runs"]["steps"][0]["run"])
                 fixture.env["INPUT_EXPECTED_RELEASE_COMMIT"] = ""
-            run = metadata["runs"]["steps"][0]
+            run = next(item for item in metadata["runs"]["steps"] if item.get("id") == step)
             self.assertEqual(run["id"], step)
             self.assertEqual(run["shell"], "bash")
             self.assertEqual(run["env"]["ACTION_PATH"], "${{ github.action_path }}")
-            self.assertEqual(run["env"]["GH_TOKEN"], "${{ inputs.github-token }}")
+            token_key = "INPUT_GITHUB_TOKEN" if step == "version" else "GH_TOKEN"
+            self.assertEqual(run["env"][token_key], "${{ inputs.github-token }}")
+            if step == "version":
+                fixture.env["INPUT_GITHUB_TOKEN"] = "test-token"
+                event = fixture.top / "root-event.json"
+                event.write_text("{}")
+                fixture.env.update(GITHUB_EVENT_NAME="workflow_dispatch",
+                                   GITHUB_REF="refs/heads/main", GITHUB_EVENT_PATH=str(event))
             for key, value in metadata["outputs"].items():
                 self.assertEqual(
                     value["value"], "${{ steps." + step + ".outputs." + key + " }}"

@@ -94,6 +94,10 @@ verify_publication_batch() {
   done
   [[ $generated == "$expected_tree" ]] || fail 'Release commit contains changes beyond the generated release tree.'
   git reset --hard "$release"
+}
+
+prepare_publication_notes() {
+  [[ -n $release ]] || return 0
   # Validate every body before any remote writes, including later batch members.
   local item package version index=0
   mkdir -p "$temp/notes"

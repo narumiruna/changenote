@@ -535,12 +535,36 @@ Package configuration needs no new fields. Existing Actions remain supported.
 
 The four lower-level composite Actions are:
 
-- `narumiruna/changenote@<full-commit-sha>`: create or update a Release PR.
+- `narumiruna/changenote@<full-commit-sha>`: manage a version PR and run optional project commands after its verified merge.
 - `narumiruna/changenote/publish@<full-commit-sha>`: publish annotated tags and GitHub Releases.
 - `narumiruna/changenote/preview@<full-commit-sha>`: inspect publication state without source or remote writes.
 - `narumiruna/changenote/check@<full-commit-sha>`: check ordinary PR notes and report pending releases.
 
-The Release PR and publication Actions require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `changenote` executable on `PATH`. Ubuntu GitHub-hosted runners include the non-CLI tools. Package version files, lockfiles, changelogs, and `.changenote/releases.json` must not be symlinks. Both writing Actions check the batch path before CLI writes. Run at the repository root; the Actions load their scripts from the Action checkout, not the consumer repository. They do not install the CLI or publish registries. The CLI updates configured primary and additional version files and supported existing lockfiles; it does not synchronize unlisted manifests. Manifest releases also need the package managers and cached dependencies listed above.
+The Release PR and publication Actions require Linux, Bash, Git, `gh`, `jq`, a clean checkout, and an installed `changenote` executable on `PATH`. Ubuntu GitHub-hosted runners include the non-CLI tools. Package version files, lockfiles, changelogs, and `.changenote/releases.json` must not be symlinks. Both writing Actions check the batch path before CLI writes. Run at the repository root; the Actions load their scripts from the Action checkout, not the consumer repository. They do not install the CLI. Registry publication through root command inputs uses caller-owned tools. The CLI updates configured primary and additional version files and supported existing lockfiles; it does not synchronize unlisted manifests. Manifest releases also need the package managers and cached dependencies listed above.
+
+### Post-merge project commands
+
+The root Action accepts optional `publish-command` and `release-command` Bash scripts.
+After a managed version PR is merged, it verifies the exact release tree, runs `publish-command`, then runs `release-command` only after success.
+For example, a prepared package can use `publish-command: uv publish` or `publish-command: cargo publish --locked`; a project script can build, test, and upload.
+`release-command: bash scripts/release.sh` can then push tags or publish a GitHub Release.
+With neither input, the root Action performs no package, tag, or GitHub publication.
+
+The root Action requires a compatible installed CLI and the tools/caches needed to replay configured lockfiles.
+It sets up uv for merge routing and requires Python 3 on Linux, as provided by Ubuntu runners.
+Use base-branch pushes or manual dispatch; manual dispatch only manages the PR.
+Contributor PR events are rejected. Use `/check` for those events.
+
+Commands run in a disposable worktree at `CHANGENOTE_RELEASE_COMMIT` and receive the whole batch as `CHANGENOTE_RELEASES` JSON.
+They share generated artifacts, but do not inherit untracked files from the caller's checkout or the `github-token` input automatically.
+Provide command credentials through the caller step's `env`.
+The caller owns project tests, dependencies, builds, registry access, approval environments, and concurrency.
+Re-running the original eligible workflow repeats commands; scripts must handle partial publication safely.
+A newer batch stops a stale run. No exactly-once execution or automatic rollback is promised.
+
+See the [command-hook workflow](examples/github-actions/command-hooks.yml) and [contract, migration, and hosted handoff](docs/github-actions.md#root-action-post-merge-commands).
+Existing `/release`, `/publish`, `/preview`, and `/check` behavior is unchanged.
+In particular, `/release` still provides its own built-in tag and GitHub Release publication, not custom commands.
 
 ### PR note report
 
@@ -719,9 +743,11 @@ After the first crates.io publication, users can install the CLI with `cargo ins
 | Release PR, Publication, Preview | `base-branch` | Repository default branch |
 | Release PR | `commit-message` | `chore(release): version packages` |
 | Release PR | `pr-title` | `chore(release): version packages` |
+| Root | `publish-command`, `release-command` | Empty; no custom publication |
 | Publication | `expected-release-commit` | Empty; retain latest-batch selection |
 
-The PR Action outputs `has-notes` (`true` or `false`), `pr-number` (number or empty string), and `pr-operation` (`created`, `updated`, `closed`, or `none`). `updated` includes a no-op version rerun that refreshes the PR metadata.
+The root Action outputs `has-notes` (`true` or `false`), `pr-number` (number or empty string), and `pr-operation` (`created`, `updated`, `closed`, or `none`). `updated` includes a no-op version rerun that refreshes the PR metadata.
+It also returns `release-commit` and `releases` for a verified managed merge, independently of configured commands or GitHub publication state. No selected merge returns an empty commit and `[]`. Read these outputs only after success.
 
 The publication Action accepts an optional `expected-release-commit`, a full lowercase 40-character commit SHA.
 A mismatch with the verified latest batch fails before remote tag or Release writes.
@@ -749,7 +775,7 @@ Before production use, verify repository permissions, branch rules, and App-toke
 - Only top-level `.changenote/*.md` files are read. Hidden files and `README.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` are ignored.
 - `tag` requires a clean Git working tree and committed release data. It creates local tags only; it does not push, publish artifacts, or run arbitrary commands.
 - Input validation and output preparation happen before version writes. Ordinary failures trigger best-effort recovery of known release files. Failed recovery or process termination can leave partial changes. Run in a clean checkout, inspect changes, and use Git to restore files before retrying. Do not run concurrent local version commands.
-- The CLI and reusable Actions do not implement dependency propagation, registry publication, or prereleases.
+- The CLI and built-in Action publication paths do not implement dependency propagation, registry clients, or prereleases. Optional root Action commands can invoke caller-owned registry tools.
 
 ## Development
 

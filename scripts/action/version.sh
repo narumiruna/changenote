@@ -65,7 +65,7 @@ jq -r --arg marker "$marker" --arg base "$base" '
       "### " + .title + "\n\n" +
       (.notes | map("- " + (split("\n") | join("\n  "))) | join("\n"))
     ) | join("\n\n") end;
-  $marker + "\n\nThis PR was opened by the [changenote release](https://github.com/narumiruna/changenote) GitHub Action. Merge this PR when you are ready to release these versions. Use the publication Action to publish tags and GitHub Releases; registry publication requires a separate workflow. If you are not ready to release, leave this PR open. New change notes on `" + $base + "` update this PR.\n\n# Releases\n\n" +
+  $marker + "\n\nThis PR was opened by the [changenote release](https://github.com/narumiruna/changenote) GitHub Action. Merge this PR when you are ready to release these versions. Post-merge commands or the publication Action can publish tags and GitHub Releases; registry publication uses caller-owned commands or workflows. If you are not ready to release, leave this PR open. New change notes on `" + $base + "` update this PR.\n\n# Releases\n\n" +
   (map("## " + .package + "@" + .version + "\n\n" + changes) | join("\n\n"))
 ' "$temp/details.json" > "$temp/body.md"
 if [[ $(wc -c < "$temp/body.md") -gt 60000 ]]; then
