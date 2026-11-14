@@ -1,3 +1,11 @@
+## 0.13.1
+
+### Patch Changes
+
+- Sources: [ffa5f79dd2bb](https://github.com/changenote/changenote/commit/ffa5f79dd2bb45a10fbf233d6326f54c6575fec3)
+  
+  Improve bundled skill guidance for separate, concise changelog entries.
+
 ## 0.13.0
 
 ### Minor Changes
