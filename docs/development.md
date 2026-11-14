@@ -87,7 +87,8 @@ The migration pins Action revision `4b2d07126b8a4da4b44aa5fb8256dd81a69e2e3a` fr
 They no longer use `$/` self-repository references or local `scripts/action/` helpers.
 Publication still selects the release from the remote base branch.
 Merge the Action PR before the CLI migration PR removes the old entry points from remote main.
-The CLI and Action share the same release version, with separate commit SHAs.
+The CLI and Action have independent release versions and commit SHAs.
+The Action pins a compatible CLI revision; a CLI release does not automatically update that pin.
 Do not use an unpinned branch or reuse the old repository SHA with the new Action path.
 See the [migration procedure](https://github.com/changenote/action/blob/main/docs/migration.md).
 
