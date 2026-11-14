@@ -283,7 +283,9 @@ jobs:
 - Preserve the requested publication behavior.
   - Without scripts, enabled root publication controls can complete an older validated batch on later base-branch pushes.
   - Either nonblank script limits follow-up work to a qualifying new managed merge in the triggering push range.
-  - Manual root invocations only manage the PR, regardless of scripts or publication controls.
+    - A later push can replace a pending managed-merge run in the template's concurrency group and skip its scripts.
+    - Before enabling scripts with this setup, require durable routing or a recovery path for that merge.
+  - Manual root invocations only manage the PR, regardless of scripts or publication controls; they cannot recover skipped scripts.
   - Workflow menu choices such as `retry-publication` are caller-owned routing, not root operations; never pass them to root.
 - Pin Actions to reviewed full commit SHAs from `changenote/action`, not CLI repository SHAs.
   - Pin other external Actions to reviewed full SHAs as well.
