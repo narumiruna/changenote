@@ -1,7 +1,7 @@
 use anyhow::Result;
 use changenote::{Bump, Coverage};
 use clap::error::ErrorKind;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use semver::Version;
 use std::path::{Path, PathBuf};
 
@@ -12,6 +12,13 @@ struct Cli {
     root: PathBuf,
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
 }
 
 #[derive(Subcommand)]
@@ -111,6 +118,11 @@ enum Commands {
     },
     /// Create local annotated tags for the committed release plan.
     Tag,
+    /// Print a shell completion script to stdout without reading project configuration.
+    Completion {
+        #[arg(value_enum)]
+        shell: CompletionShell,
+    },
 }
 
 fn run() -> Result<()> {
@@ -267,6 +279,19 @@ fn run() -> Result<()> {
             for tag in changenote::tag(&cli.root)? {
                 println!("{tag}");
             }
+        }
+        Commands::Completion { shell } => {
+            let shell = match shell {
+                CompletionShell::Bash => clap_complete::Shell::Bash,
+                CompletionShell::Zsh => clap_complete::Shell::Zsh,
+                CompletionShell::Fish => clap_complete::Shell::Fish,
+            };
+            clap_complete::generate(
+                shell,
+                &mut Cli::command(),
+                "changenote",
+                &mut std::io::stdout(),
+            );
         }
     }
     Ok(())
