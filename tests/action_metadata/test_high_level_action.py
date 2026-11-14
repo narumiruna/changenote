@@ -39,8 +39,8 @@ class ReleaseMetadata(unittest.TestCase):
         self.assertEqual(set(root["outputs"]), {
             "has-notes", "pr-number", "pr-operation", "release-commit", "releases",
         })
-        self.assertEqual(root["inputs"]["publish-command"]["default"], "")
-        self.assertEqual(root["inputs"]["release-command"]["default"], "")
+        self.assertEqual(root["inputs"]["publish-script"]["default"], "")
+        self.assertEqual(root["inputs"]["release-script"]["default"], "")
         self.assertIn("lifecycle.sh", root["runs"]["steps"][-1]["run"])
 
     def test_setup_order_and_cache_hit_activation(self):

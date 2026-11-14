@@ -15,9 +15,9 @@ class CommandHookMetadata(unittest.TestCase):
     def test_only_two_optional_commands_extend_the_existing_inputs(self):
         self.assertEqual(set(self.action["inputs"]), {
             "github-token", "base-branch", "commit-message", "pr-title",
-            "publish-command", "release-command",
+            "publish-script", "release-script",
         })
-        for key in ("publish-command", "release-command"):
+        for key in ("publish-script", "release-script"):
             self.assertEqual(self.action["inputs"][key]["default"], "")
         self.assertEqual(set(self.action["outputs"]), {
             "has-notes", "pr-number", "pr-operation", "release-commit", "releases",
@@ -28,7 +28,7 @@ class CommandHookMetadata(unittest.TestCase):
         step = next(s for s in self.action["runs"]["steps"] if s.get("id") == "version")
         self.assertNotIn("${{", step["run"])
         self.assertNotIn("GH_TOKEN", step["env"])
-        for key in ("publish-command", "release-command", "github-token"):
+        for key in ("publish-script", "release-script", "github-token"):
             env = "INPUT_" + key.upper().replace("-", "_")
             self.assertEqual(step["env"][env], "${{ inputs." + key + " }}")
         self.assertIn('"$ACTION_PATH/scripts/action/lifecycle.sh"', step["run"])
@@ -53,14 +53,16 @@ class CommandHookMetadata(unittest.TestCase):
         steps = job["steps"]
         self.assertEqual(steps[0]["with"]["persist-credentials"], "false")
         self.assertEqual(steps[-1]["uses"], "narumiruna/changenote@<full-action-commit-sha>")
-        self.assertEqual(steps[-1]["with"]["publish-command"], "bash scripts/publish.sh")
-        self.assertEqual(steps[-1]["with"]["release-command"], "bash scripts/release.sh")
+        self.assertEqual(steps[-1]["with"]["publish-script"], "bash scripts/publish.sh")
+        self.assertEqual(steps[-1]["with"]["release-script"], "bash scripts/release.sh")
         self.assertNotIn("scripts/action/", str(steps))
         guide = (ROOT / "docs/github-actions.md").read_text()
         for key in (*self.action["inputs"], *self.action["outputs"]):
             self.assertIn("`" + key + "`", guide)
         self.assertIn("CHANGENOTE_RELEASE_COMMIT", guide)
         self.assertIn("CHANGENOTE_RELEASES", guide)
+        readme = (ROOT / "README.md").read_text()
+        self.assertIn("| Root | `publish-script`, `release-script` | Empty; no custom publication |", readme)
 
 
 if __name__ == "__main__":

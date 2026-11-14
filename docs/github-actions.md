@@ -18,11 +18,11 @@ If generated PRs must start CI, use a GitHub App token or PAT through `github-to
 
 | Optional input | Default | Execution |
 | --- | --- | --- |
-| `publish-command` | Empty | Publish packages after managed-merge and full-tree verification. |
-| `release-command` | Empty | Create tags, assets, or a GitHub Release after successful `publish-command`, or directly if it is absent. |
+| `publish-script` | Empty | Publish packages after managed-merge and full-tree verification. |
+| `release-script` | Empty | Create tags, assets, or a GitHub Release after successful `publish-script`, or directly if it is absent. |
 
-Commands are Bash script text. Whitespace-only input is absent.
-For example, use `publish-command: uv publish` for prepared Python artifacts or `publish-command: cargo publish --locked` for a prepared crate.
+Both script inputs accept Bash script text. Whitespace-only input is absent.
+For example, use `publish-script: uv publish` for prepared Python artifacts or `publish-script: cargo publish --locked` for a prepared crate.
 A project script can test, build, and upload in one command.
 With both inputs, the fixed order is **publish, then release**. With one input, only that command runs.
 With neither input, the root Action creates no tags, GitHub Releases, or registry uploads.
@@ -83,12 +83,15 @@ A PR-maintenance failure does not suppress an independently verified merged batc
 
 ### Hook retries and migration
 
-A command failure fails the Action. A failed `publish-command` prevents `release-command`.
+A command failure fails the Action. A failed `publish-script` prevents `release-script`.
 The Action does not retry commands or undo external writes.
 Re-running the original eligible workflow repeats configured commands from the beginning, even when a GitHub Release already exists.
 Scripts must handle already-published versions and partial uploads safely.
 If a newer release batch has replaced the selected batch, the old run fails instead of publishing a different version.
 Inspect state and recover explicitly; do not move tags or replace published packages automatically.
+
+Replace `publish-command` with `publish-script` and `release-command` with `release-script` in workflows.
+The old input names are not supported. Script text, execution order, and empty defaults are unchanged.
 
 Consumers of the older root Action must restrict invocation to base-branch `push` and `workflow_dispatch` events.
 Do not use the root on contributor PRs. Use `/check` for read-only note checks.

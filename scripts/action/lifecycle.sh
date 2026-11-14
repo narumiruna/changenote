@@ -45,7 +45,7 @@ cd -- "$root"
 verify_publication_batch
 [[ $release == "$expected" ]] || fail 'Release batch changed after routing; re-run the selected release workflow.'
 has_commands=false
-if [[ ${INPUT_PUBLISH_COMMAND:-} =~ [^[:space:]] || ${INPUT_RELEASE_COMMAND:-} =~ [^[:space:]] ]]; then
+if [[ ${INPUT_PUBLISH_SCRIPT:-} =~ [^[:space:]] || ${INPUT_RELEASE_SCRIPT:-} =~ [^[:space:]] ]]; then
   has_commands=true
 fi
 if [[ $legacy_batch == true && $has_commands == true ]]; then
@@ -77,13 +77,13 @@ run_command() {
   (
     # Keep the management token out of the command environment. Caller-supplied
     # credentials remain available; this is not a sandbox for trusted commands.
-    unset GH_TOKEN INPUT_GITHUB_TOKEN INPUT_PUBLISH_COMMAND INPUT_RELEASE_COMMAND BASH_ENV
+    unset GH_TOKEN INPUT_GITHUB_TOKEN INPUT_PUBLISH_SCRIPT INPUT_RELEASE_SCRIPT BASH_ENV
     if [[ $caller_token_set == x ]]; then export GH_TOKEN="$caller_token"; fi
     export CHANGENOTE_RELEASE_COMMIT=$selected CHANGENOTE_RELEASES=$releases
     cd -- "$work"
     bash --noprofile --norc -e -o pipefail "$temp/$name.sh"
   )
 }
-run_command publish-command "${INPUT_PUBLISH_COMMAND:-}"
-run_command release-command "${INPUT_RELEASE_COMMAND:-}"
+run_command publish-script "${INPUT_PUBLISH_SCRIPT:-}"
+run_command release-script "${INPUT_RELEASE_SCRIPT:-}"
 exit "$pr_result"

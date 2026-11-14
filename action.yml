@@ -1,5 +1,5 @@
 name: Changenote Release PR
-description: Manage version PRs and run optional publish and release commands after a verified managed merge (Linux).
+description: Manage version PRs and run optional publish and release scripts after a verified managed merge (Linux).
 inputs:
   github-token:
     description: Token with contents and pull requests write permissions.
@@ -13,11 +13,11 @@ inputs:
   pr-title:
     description: Release PR title.
     default: 'chore(release): version packages'
-  publish-command:
-    description: Optional Bash script to publish packages after a verified managed merge. Runs before release-command.
+  publish-script:
+    description: Optional Bash script to publish packages after a verified managed merge. Runs before release-script.
     default: ''
-  release-command:
-    description: Optional Bash script to create tags, assets, or GitHub Releases after successful publish-command, or directly when it is absent.
+  release-script:
+    description: Optional Bash script to create tags, assets, or GitHub Releases after successful publish-script, or directly when it is absent.
     default: ''
 outputs:
   has-notes:
@@ -49,7 +49,7 @@ runs:
         INPUT_BASE_BRANCH: ${{ inputs.base-branch }}
         INPUT_COMMIT_MESSAGE: ${{ inputs.commit-message }}
         INPUT_PR_TITLE: ${{ inputs.pr-title }}
-        INPUT_PUBLISH_COMMAND: ${{ inputs.publish-command }}
-        INPUT_RELEASE_COMMAND: ${{ inputs.release-command }}
+        INPUT_PUBLISH_SCRIPT: ${{ inputs.publish-script }}
+        INPUT_RELEASE_SCRIPT: ${{ inputs.release-script }}
         ACTION_PATH: ${{ github.action_path }}
       run: bash "$ACTION_PATH/scripts/action/lifecycle.sh"
