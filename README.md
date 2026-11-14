@@ -8,7 +8,7 @@ Written in Rust. Inspired by [Changesets](https://github.com/changesets/changese
 - Review a release plan before applying it.
 - Release locally or use GitHub Actions for version PRs and publication.
 
-[Install](#install) · [Quick start](#quick-start) · [Commands](#commands) · [GitHub Actions](#github-actions) · [Documentation](#documentation)
+[Install](#install) · [Quick start](#quick-start) · [Commands](#commands) · [GitHub Actions](#github-actions) · [Agent skills](#agent-skills) · [Documentation](#documentation)
 
 ## Install
 
@@ -173,6 +173,16 @@ Actions never approve or merge their PRs.
 Built-in publication creates Git tags and GitHub Releases, not registry uploads.
 Keep changelog output enabled for built-in publication.
 Use project scripts or separate jobs for registries and other distribution systems.
+
+## Agent skills
+
+| Skill | Purpose |
+| --- | --- |
+| [changenote](skills/changenote/SKILL.md) | CLI change notes, configuration, release plans, versions, and tags, plus GitHub Actions setup, checks, release PRs, publication, and recovery. |
+
+The `changenote` skill replaces `changenote-manage-releases`, `changenote-cli`, and `changenote-action`.
+Update installed skills and exact-name references to `changenote`.
+The old skill paths are no longer provided.
 
 ## Documentation
 
