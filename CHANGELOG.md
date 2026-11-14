@@ -1,3 +1,22 @@
+## 0.12.0
+
+### Minor Changes
+
+- Add the `skill` command to print the bundled changenote agent skill without project configuration or file changes.
+
+- Remove the Dockerfile and the container image publication workflow. New container images are no longer published to Docker Hub or GitHub Container Registry. Use `cargo install changenote --locked` or `uvx changenote` instead.
+
+- Add the completion command to generate Bash, Zsh, and Fish shell completion scripts without project configuration.
+
+- Move the root, check, preview, publish, and release GitHub Actions from `changenote/changenote` to `changenote/action`.
+  The CLI repository no longer provides Action entry points.
+  Update workflow references to the same Action paths under `changenote/action`, with a reviewed full commit SHA from that repository.
+  New configuration files use the schema URL under `changenote/changenote` after the repository transfer.
+
+- Use one `changenote` skill for local CLI release work and GitHub Actions workflows.
+  Update installed skills and exact-name references from `changenote-manage-releases`, `changenote-cli`, or `changenote-action` to `changenote`.
+  The old skill paths are no longer provided.
+
 ## 0.11.0
 
 ### Minor Changes
