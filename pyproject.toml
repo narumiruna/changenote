@@ -25,4 +25,5 @@ cache-keys = [
     { file = "Cargo.toml" },
     { file = "Cargo.lock" },
     { file = "src/**/*.rs" },
+    { file = "skills/changenote/SKILL.md" },
 ]

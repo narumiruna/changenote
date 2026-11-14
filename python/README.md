@@ -35,7 +35,9 @@ uv run --locked python -m unittest discover -s python/tests
 
 The optional Python module runner finds the installed binary and passes arguments, the working directory, and the environment to it. It preserves the executable's exit code. It does not download a binary or use a system executable from `PATH`.
 
-uv cache keys include the Rust sources and Cargo manifests, so Rust edits cause local package rebuilds. `uv build` produces a source distribution and builds a wheel from it, including the Rust package sources.
+uv cache keys include the Rust sources, Cargo manifests, and bundled `skills/changenote/SKILL.md`.
+Changes to these files cause local package rebuilds.
+`uv build` produces a source distribution and builds a wheel from it, including the Rust package sources and bundled skill.
 
 The Python distribution uses `dynamic = ["version"]`: maturin reads the version directly from root `Cargo.toml`. The wheel metadata and the packaged CLI's `--version` therefore use the same Rust crate version; do not add a separate Python manifest version.
 
