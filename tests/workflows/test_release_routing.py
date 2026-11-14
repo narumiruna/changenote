@@ -35,7 +35,7 @@ class ReleaseRouting(unittest.TestCase):
             "merge_commit_sha": RELEASE,
             "base": {"ref": "main", "repo": {"full_name": REPOSITORY}},
             "head": {
-                "ref": "narumi/chore/changenote-release-main",
+                "ref": "changenote-release/main",
                 "repo": {"full_name": REPOSITORY},
             },
             "body": routing.MARKER + "\nRelease notes",
@@ -71,6 +71,10 @@ class ReleaseRouting(unittest.TestCase):
         })
         # Only read-only Git and GitHub commands are permitted by the mock.
         self.assertEqual(self.command.call_args.args[0], "gh")
+
+    def test_previous_managed_branch_remains_valid_for_pinned_actions(self):
+        self.pull["head"]["ref"] = "narumi/chore/changenote-release-main"
+        self.assertEqual(self.classify()["release-commit"], RELEASE)
 
     def test_ordinary_push_ignores_historical_batch(self):
         self.changed.clear()

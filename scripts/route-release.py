@@ -88,7 +88,7 @@ def route(event_name, event, repository, ref, base="main"):
             and pull.get("base", {}).get("ref") == base
             and pull.get("base", {}).get("repo", {}).get("full_name") == repository
             and pull.get("head", {}).get("ref")
-            == f"narumi/chore/changenote-release-{base}"
+            in (f"changenote-release/{base}", f"narumi/chore/changenote-release-{base}")
             and (pull.get("head", {}).get("repo") or {}).get("full_name") == repository
             and (pull.get("body") or "").startswith(MARKER)
         )
