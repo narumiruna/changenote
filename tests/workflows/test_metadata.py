@@ -36,7 +36,7 @@ class Metadata(unittest.TestCase):
         updates = read_yaml(ROOT / ".github/dependabot.yml")["updates"]
         self.assertEqual(
             {update["package-ecosystem"] for update in updates},
-            {"github-actions", "cargo", "uv", "docker"},
+            {"github-actions", "cargo", "uv"},
         )
         for update in updates:
             with self.subTest(ecosystem=update["package-ecosystem"]):
