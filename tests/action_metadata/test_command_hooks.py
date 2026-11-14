@@ -62,7 +62,9 @@ class CommandHookMetadata(unittest.TestCase):
         self.assertIn("CHANGENOTE_RELEASE_COMMIT", guide)
         self.assertIn("CHANGENOTE_RELEASES", guide)
         readme = (ROOT / "README.md").read_text()
-        self.assertIn("| Root | `publish-script`, `release-script` | Empty; no custom publication |", readme)
+        self.assertIn("docs/github-actions.md", readme)
+        reference = (ROOT / "docs/github-actions-reference.md").read_text()
+        self.assertIn("| Root | `publish-script`, `release-script` | Empty; no custom publication |", reference)
 
 
 if __name__ == "__main__":

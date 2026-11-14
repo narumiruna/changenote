@@ -369,9 +369,12 @@ class Metadata(unittest.TestCase):
         # Publish has no release-result predicate: PR failure must not block recovery.
         self.assertNotIn("needs.release.result", jobs["publish"]["if"])
 
-    def test_readme_examples_and_contracts(self):
-        readme = (ROOT / "README.md").read_text()
-        blocks = re.findall(r"```yaml\n(.*?)```", readme, re.DOTALL)
+    def test_documented_examples_and_contracts(self):
+        guide = "\n".join(
+            (ROOT / path).read_text()
+            for path in ("docs/checks.md", "docs/github-actions-reference.md")
+        )
+        blocks = re.findall(r"```yaml\n(.*?)```", guide, re.DOTALL)
         examples = [yaml.load(block, Loader=yaml.BaseLoader) for block in blocks]
         workflow = next(example for example in examples if "jobs" in example)
         check = next(example for example in examples if "steps" in example)
@@ -421,7 +424,7 @@ class Metadata(unittest.TestCase):
         ):
             action = read_yaml(path)
             for key in (*action["inputs"], *action["outputs"]):
-                self.assertIn("`" + key + "`", readme)
+                self.assertIn("`" + key + "`", guide)
 
 
 if __name__ == "__main__":

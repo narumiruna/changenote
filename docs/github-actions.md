@@ -1,5 +1,19 @@
 # GitHub release Actions
 
+Choose an entry point for your workflow:
+
+| Goal | Guide |
+| --- | --- |
+| Install tools and publish tags and GitHub Releases | [Config-driven publication](#config-driven-github-publication) |
+| Run project-owned publication scripts after a verified merge | [Root Action](#root-action-post-merge-commands) |
+| Validate the release commit in separate CI jobs | [External CI and artifacts](#external-ci-and-artifacts-logice-example) |
+| Manage CLI setup and separate release operations yourself | [Lower-level Actions](github-actions-reference.md) |
+| Check contributor PR notes without publication | [PR note checks](checks.md#github-action-report) |
+
+Built-in publication creates Git tags and GitHub Releases, not registry artifacts.
+Keep changelog output enabled for built-in publication.
+For this project's own release routing and registry setup, see [Development](development.md#repository-release-workflow).
+
 ## Root Action: post-merge commands
 
 Use `narumiruna/changenote@<full-action-commit-sha>` to manage version PRs and run optional project commands after a managed PR is merged.
@@ -7,7 +21,7 @@ See [the command-hook workflow](../examples/github-actions/command-hooks.yml).
 Replace all SHA placeholders with reviewed compatible full commit SHAs.
 The root Action needs an installed trusted CLI, Bash, Git, `gh`, `jq`, and Python 3 on Linux. Ubuntu runners provide the non-CLI tools.
 It sets up uv for its own router, not the project's runtime or dependencies.
-Prepare supported lockfile tools and caches for PR generation and release replay as described in the README.
+Prepare supported lockfile tools and caches for PR generation and release replay as described in [automatic lockfile synchronization](configuration.md#automatic-lockfile-synchronization).
 Never build the trusted CLI from a contributor PR.
 
 The existing inputs `github-token`, `base-branch`, `commit-message`, and `pr-title` retain their defaults.
@@ -43,7 +57,7 @@ It does not switch silently to another release commit.
 This check does not reserve the branch against a later merge.
 GitHub tag/Release state does not decide whether commands run. Changelog output can be disabled.
 Historical note-bearing batches remain read-only; custom commands are rejected for them.
-The stricter legacy, changelog-body, and remote-publication rules of `/preview` and `/publish` remain unchanged.
+The stricter [legacy, changelog-body, and remote-publication rules](github-actions-reference.md#publication-workflow) of `/preview` and `/publish` remain unchanged.
 
 Commands run once per batch per eligible invocation in a disposable worktree at the verified release commit.
 They share generated files between commands and have an `origin` remote without stored management credentials.

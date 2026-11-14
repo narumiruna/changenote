@@ -184,7 +184,7 @@ Complete unpublished releases in that format before upgrading; do not convert th
 Before the first release, verify the resolved Xcode settings and confirm that a generated project stays unchanged when only the version file changes.
 If adoption is stopped before release, restore the previous project configuration and version source with Git.
 Do not edit committed release batches or move published tags.
-For a failed release write, inspect the configured outputs and follow [release-write recovery](../README.md#release-write-recovery) before retrying.
+For a failed release write, inspect the configured outputs and follow [release-write recovery](releases.md#release-write-recovery) before retrying.
 
 The tests cover isolated version files, configuration examples, and local Action staging and publication replay.
 They do not verify consumer app integrations, signed archives, signing permissions, or App Store delivery.
