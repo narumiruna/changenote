@@ -118,6 +118,8 @@ enum Commands {
     },
     /// Create local annotated tags for the committed release plan.
     Tag,
+    /// Print the bundled agent skill to stdout without reading project configuration.
+    Skill,
     /// Print a shell completion script to stdout without reading project configuration.
     Completion {
         #[arg(value_enum)]
@@ -280,6 +282,7 @@ fn run() -> Result<()> {
                 println!("{tag}");
             }
         }
+        Commands::Skill => print!("{}", include_str!("../skills/changenote/SKILL.md")),
         Commands::Completion { shell } => {
             let shell = match shell {
                 CompletionShell::Bash => clap_complete::Shell::Bash,

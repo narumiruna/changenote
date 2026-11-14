@@ -112,6 +112,7 @@ See [release behavior and recovery](docs/releases.md) before automating releases
 | `version` | Apply the plan and consume notes. |
 | `release-notes` | Print one package's changelog entry for an exact version. |
 | `tag` | Create local annotated tags for the committed release batch. |
+| `skill` | Print the bundled agent skill as Markdown. |
 | `completion` | Print a Bash, Zsh, or Fish completion script. |
 
 Use `changenote <command> --help` for command options.
@@ -175,6 +176,15 @@ Keep changelog output enabled for built-in publication.
 Use project scripts or separate jobs for registries and other distribution systems.
 
 ## Agent skills
+
+Print the bundled `SKILL.md`, including its YAML frontmatter, to stdout:
+
+```sh
+changenote skill
+```
+
+The command needs no project configuration and does not read local skill files or change files.
+The content is embedded at build time and matches the installed CLI version; it is not downloaded from GitHub.
 
 | Skill | Purpose |
 | --- | --- |

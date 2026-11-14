@@ -37,6 +37,7 @@ fn completion_scripts_include_commands_options_and_values_without_configuration(
             "version",
             "release-notes",
             "tag",
+            "skill",
             "completion",
             "include-note-paths",
             "message-file",
